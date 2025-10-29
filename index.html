@@ -114,7 +114,10 @@ background: rgba(255, 255, 255, 0.1);
 <script>
 /* ===== Map Init ===== */
 const map=L.map('map').setView([24.7136,46.6753],13); // Default to Riyadh, Saudi Arabia
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM'}).addTo(map);
+var googleMap = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+    maxZoom: 23,
+    subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
+});googleMap.addTo(map);
 const carIcon=L.icon({iconUrl:'https://cdn-icons-png.flaticon.com/512/3097/3097144.png',iconSize:[42,42]});
 let userMarker=null,waypoints=[],waypointMarkers=[],routes=[],totalFuel=0;
 const colors=['#FF6B6B','#4DA6FF','#FFD93D','#6BCB77','#FF8C00','#9B59B6','#00BFA5'];

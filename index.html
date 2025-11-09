@@ -422,7 +422,7 @@ function ecoAdvisor(distAhead, slope, turnText) {
             speed = 80; 
             gear = 5; 
             throttle = 55; 
-            tip = "Maintain steady speed";
+            tip = "Maintain steady speed on highway";
             break;
 
         case "city":
@@ -463,16 +463,12 @@ function ecoAdvisor(distAhead, slope, turnText) {
         gear = 4;
     }
 
-    // ✅ Straight road hint (optional)
-    if (distAhead > 700 && slope > -3 && slope < 3) {
-        tip = "Long straight road – steady drive.";
+    // Long forward straight (independent)
+    if (distAhead > 700) {
+        tip += " | Long straight road ahead";
     }
-    return {
-        speed: 50,
-        gear: 3,
-        throttle: 40,
-        tip: tip
-    };
+
+    return { speed, gear, throttle, tip };
 }
 
 /* ===== Speech Visibility Failsafe ===== */
@@ -510,7 +506,6 @@ setInterval(() => {
     }
 }, 5000);
 /* ===== Independent Global Tip Engine (Every 20 sec) ===== */
-/* ===== New Live Tip Engine (Every 10 sec, Always Speaks) ===== */
 let lastTipTime = 0;
 
 setInterval(() => {
@@ -518,10 +513,15 @@ setInterval(() => {
     if (document.visibilityState !== "visible") return;
 
     const now = Date.now();
-    if (now - lastTipTime < 10000) return; 
+    if (now - lastTipTime < 20000) return; 
     lastTipTime = now;
 
+    // ✅ Allow tips even when car is slow
     const latlng = userMarker.getLatLng();
+    const speed = calculateGPSSpeed(latlng);
+
+    // DO NOT block tips by speed (remove speed < 6 condition)
+
     const eco = ecoAdvisor(800, lastSlope, "");
 
     const msg = new SpeechSynthesisUtterance(`Tip: ${eco.tip}`);
@@ -536,10 +536,7 @@ setInterval(() => {
     rememberSpeech("tip", msg.text);
     speechSynthesis.speak(msg);
 
-    // Update UI too
-    document.getElementById("ai-tip").textContent = `Tip: ${eco.tip}`;
-
-}, 3000);
+}, 5000);
 
 
 /* ===== Driver Behavior Monitoring (Unchanged) ===== */
@@ -713,7 +710,8 @@ async function adaptiveAIDashboard(latlng, heading) {
 
       // Update Tip Box with upcoming step
       const upcomingStepDistance = step.distance < 1000 ? `${step.distance.toFixed(0)} m` : `${(step.distance / 1000).toFixed(1)} km`;
-      document.getElementById("ai-tip").textContent = `Next: ${step.text} (${upcomingStepDistance})`;
+      document.getElementById("ai-tip").textContent = `Next: ${step.text} (${upcomingStepDistance}) | Eco: ${eco.tip}`;
+
       if (!driverCountry) updateDriverCountry(latlng);
 
       // Voice/Step Trigger (FIXED)

@@ -237,11 +237,27 @@ const carIcon = L.divIcon({
 
 let userMarker=null,waypoints=[],waypointMarkers=[],routes=[],totalFuel=0;
 const colors=['#FF6B6B','#4DA6FF','#FFD93D','#6BCB77','#FF8C00','#9B59B6','#00BFA5'];
+/* ===== Speech Memory System ===== */
+let lastSpeech = {
+  type: null,           // "step" | "tip" | "warning"
+  text: "",
+  timestamp: Date.now(),
+  stepIndex: 0,         // last spoken step
+  routeIndex: 0         // last active route
+};
 
+function rememberSpeech(type, text) {
+  lastSpeech.type = type;
+  lastSpeech.text = text;
+  lastSpeech.timestamp = Date.now();
+  lastSpeech.stepIndex = currentStepIndex;
+  lastSpeech.routeIndex = activeRouteIndex;
+}
 // Store for road type information
 let currentRoadType = "city"; 
 let lastStepLatLng = null;
 let lastStepAdvanceTime = 0;
+let lastSlope = 0;
 /* ===== Preview Route State ===== */
 let preview = {
   active: false,
@@ -392,42 +408,138 @@ async function getRoadType(latlng) {
 }
 
 /* ===== Eco Advisor (MODIFIED for simplicity) ===== */
-function ecoAdvisor(dist, elev, turnText) {
-    const t = (turnText || '').toLowerCase();
-    let tip = "Drive smoothly", speed = 50, gear = 3, throttle = 45;
+/* ===== Unified Eco Advisor (Independent from Steps) ===== */
+function ecoAdvisor(distAhead, slope, turnText) {
+    let tip = "Drive smoothly";
+    let speed = 50;
+    let gear = 3;
+    let throttle = 45;
 
-    // Base settings by road type
-    const roadType = currentRoadType;
-    if (roadType === "highway" || roadType === "national highway") {
-        speed = 90; gear = 5; throttle = 55; tip = "Open road — steady speed";
-    } else if (roadType === "city" || roadType === "residential") {
-        speed = 40; gear = 3; throttle = 40; tip = "City driving — anticipate stops";
-    } else if (roadType === "mountain") {
-        speed = 35; gear = 2; throttle = 50; tip = "Mountain road — use engine braking";
-    } else if (roadType === "offroad") {
-        speed = 20; gear = 1; throttle = 30; tip = "Rough terrain — low gear";
+    // Road-type global logic
+    switch (currentRoadType) {
+        case "highway":
+        case "national highway":
+            speed = 80; 
+            gear = 5; 
+            throttle = 55; 
+            tip = "Maintain steady speed";
+            break;
+
+        case "city":
+            speed = 40; 
+            gear = 3; 
+            throttle = 40; 
+            tip = "City driving — anticipate stops";
+            break;
+
+        case "residential":
+            speed = 35; 
+            gear = 3; 
+            throttle = 35; 
+            tip = "Residential zone — maintain low speed";
+            break;
+
+        case "mountain":
+            speed = 35; 
+            gear = 2; 
+            throttle = 50; 
+            tip = "Mountain road — use engine braking";
+            break;
+
+        default:
+            tip = "Maintain smooth driving";
+            break;
     }
 
-    // Turn adjustments
-    if (t.includes("left") || t.includes("right")) {
-        speed = 25; gear = 2; throttle = 35; tip = "Slow for turn";
+    // Global slope logic (independent)
+    if (slope > 2.5) {
+        tip += " | Downhill ahead";
+        throttle = 20;
+        gear = 3;
+    } 
+    else if (slope < -2.5) {
+        tip += " | Uphill ahead";
+        throttle = 60;
+        gear = 4;
     }
 
-    // Elevation slope handling
-    if (elev > 2.5) { // Downhill
-        speed = Math.min(speed, 40);
-        gear = 3; throttle = 20; tip = "Downhill — maintain control";
-    } else if (elev < -2.5) { // Uphill
-        speed = Math.max(speed, 50);
-        gear = 4; throttle = 60; tip = "Uphill — steady acceleration";
+    // ✅ Straight road hint (optional)
+    if (distAhead > 700 && slope > -3 && slope < 3) {
+        tip = "Long straight road – steady drive.";
     }
-
-    // Long straight sections
-    if (dist > 800) tip += " | Long straight ahead";
-
-    return { speed, gear, throttle, tip, roadType };
+    return {
+        speed: 50,
+        gear: 3,
+        throttle: 40,
+        tip: tip
+    };
 }
 
+/* ===== Speech Visibility Failsafe ===== */
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+        // Resume speech engine
+        try { speechSynthesis.resume(); } catch {}
+        // Auto speak the last active line (step/tip/warning)
+        if (lastSpeech.text) {
+            const msg = new SpeechSynthesisUtterance(lastSpeech.text);
+            msg.rate = 1; msg.pitch = 1;
+            rememberSpeech(lastSpeech.type || "tip", msg.text);
+            speechSynthesis.speak(msg);
+        }
+    }
+});
+/* ===== Speech Watchdog (Every 3s) ===== */
+/* ===== Auto-Repeat Watchdog (every 5 sec) ===== */
+setInterval(() => {
+    // Speak only if app visible
+    if (document.visibilityState !== "visible") return;
+
+    const idleTime = Date.now() - lastSpeech.timestamp;
+
+    // If speech engine stalled for > 10 seconds → repeat last line
+    if (!speechSynthesis.speaking && idleTime > 10000 && lastSpeech.text) {
+        console.warn("🔁 Auto-repeat triggered:", lastSpeech.text);
+
+        try { speechSynthesis.cancel(); } catch {}
+        const msg = new SpeechSynthesisUtterance(lastSpeech.text);
+        msg.rate = 1; msg.pitch = 1;
+        speechSynthesis.speak(msg);
+
+        lastSpeech.timestamp = Date.now(); // refresh memory timestamp
+    }
+}, 5000);
+/* ===== Independent Global Tip Engine (Every 20 sec) ===== */
+/* ===== New Live Tip Engine (Every 10 sec, Always Speaks) ===== */
+let lastTipTime = 0;
+
+setInterval(() => {
+    if (!userMarker) return;
+    if (document.visibilityState !== "visible") return;
+
+    const now = Date.now();
+    if (now - lastTipTime < 10000) return; 
+    lastTipTime = now;
+
+    const latlng = userMarker.getLatLng();
+    const eco = ecoAdvisor(800, lastSlope, "");
+
+    const msg = new SpeechSynthesisUtterance(`Tip: ${eco.tip}`);
+    msg.rate = 1;
+    msg.pitch = 1;
+
+    // ✅ Do NOT cancel step/warning speech
+    if (lastSpeech.type !== "step" && lastSpeech.type !== "warning") {
+        try { speechSynthesis.cancel(); } catch {}
+    }
+
+    rememberSpeech("tip", msg.text);
+    speechSynthesis.speak(msg);
+
+    // Update UI too
+    document.getElementById("ai-tip").textContent = `Tip: ${eco.tip}`;
+
+}, 3000);
 
 
 /* ===== Driver Behavior Monitoring (Unchanged) ===== */
@@ -465,8 +577,27 @@ function updateDriverBehavior(currentSpeed, eco) {
     if ('speechSynthesis' in window && warnings.length) {
         const msg = new SpeechSynthesisUtterance(warnings.join(" "));
         msg.rate = 1.2; msg.pitch = 1.2; // Make warnings more distinct
-        if (speechSynthesis.speaking) { speechSynthesis.cancel(); } // Cancel step speech for urgent warning
+        // DO NOT cancel step or warning speech
+        if (lastSpeech.type !== "step", "tip" && lastSpeech.type !== "warning") {
+            try { speechSynthesis.cancel(); } catch {}
+        }
+        // Cancel step speech for urgent warning
+        rememberSpeech("warning", msg.text);
         speechSynthesis.speak(msg);
+        // ✅ Resume logic after warning finishes
+        msg.onend = () => {
+            lastSpeech.timestamp = Date.now();
+
+            // If a route is active → resume navigation step
+            if (activeRouteIndex !== null && routes[activeRouteIndex]) {
+                try { speakCurrentStep(); } catch {}
+            }
+            // If no route → resume tip engine
+            else if (lastSpeech.type === "tip") {
+                const t = new SpeechSynthesisUtterance(lastSpeech.text);
+                speechSynthesis.speak(t);
+            }
+        };
         
         // Show overspeeding warning in tip box too
         if (warnings.includes("Excessive speed detected")) {
@@ -485,6 +616,7 @@ function overspeedWarning(currentSpeed, ecoSpeed) {
     const msg = new SpeechSynthesisUtterance(warn);
     msg.lang = detectLang(step.text);
     msg.rate = 1.1;
+    rememberSpeech("warning", msg.text);
     speechSynthesis.speak(msg);
   }
 }
@@ -543,6 +675,7 @@ async function adaptiveAIDashboard(latlng, heading) {
  
   // 2. Calculate Eco Advice (Always based on real-time data)
   const eco = dynamicEcoAdvisor(currentSpeed, slope, 800); // Use 800m lookahead distance for general advice
+  lastSlope = slope;
   // 👇 While preview is open:
   if (preview.active) {
     // Keep driver behavior & dashboard numbers updating
@@ -558,7 +691,7 @@ async function adaptiveAIDashboard(latlng, heading) {
   }
  
   // 3. Route Guidance Logic
-  if (routes.length && activeRouteIndex !== null) {
+  if (activeRouteIndex !== null && routes.length > 0 && routes[activeRouteIndex]) {
     const route = routes[activeRouteIndex];
     const steps = route.steps;
     const routeDisplayIndex = route.routeIndex;
@@ -580,8 +713,7 @@ async function adaptiveAIDashboard(latlng, heading) {
 
       // Update Tip Box with upcoming step
       const upcomingStepDistance = step.distance < 1000 ? `${step.distance.toFixed(0)} m` : `${(step.distance / 1000).toFixed(1)} km`;
-      document.getElementById("ai-tip").textContent = `Next: ${step.text} (${upcomingStepDistance}) | Eco: ${eco.tip}`;
-
+      document.getElementById("ai-tip").textContent = `Next: ${step.text} (${upcomingStepDistance})`;
       if (!driverCountry) updateDriverCountry(latlng);
 
       // Voice/Step Trigger (FIXED)
@@ -594,98 +726,26 @@ async function adaptiveAIDashboard(latlng, heading) {
         // Determine distance for speech
         const stepDistanceSpeech = step.distance < 1000 ? `${step.distance.toFixed(0)} meters` : `${(step.distance / 1000).toFixed(1)} kilometers`;
 
-        // Voice alert (sequential speech)
-        if ("speechSynthesis" in window) {
-          speechSynthesis.cancel(); // Always cancel previous speech
+        // ✅ Step speech only (NO ECO TIPS)
+        if ("speechSynthesis" in window) {
+            try { speechSynthesis.cancel(); } catch {}
 
-          // 1. Speak Step Instruction and Distance
-          const stepMsg = new SpeechSynthesisUtterance(`${step.text}. Proceed for ${stepDistanceSpeech}.`);
-          stepMsg.rate = 1; stepMsg.pitch = 1;
-          
-          // 2. Speak Eco Tip after step instruction (NO SPEED/GEAR)
-          const ecoMsg = new SpeechSynthesisUtterance(`Eco Tip: ${stepEco.tip}`);
-          ecoMsg.rate = 1; ecoMsg.pitch = 1;
+            const stepMsg = new SpeechSynthesisUtterance(`${step.text}. Proceed for ${stepDistanceSpeech}.`);
+            stepMsg.rate = 1; 
+            stepMsg.pitch = 1;
 
-          const advanceStep = () => {
-            clearTimeout(speechTimer); // Clear failsafe timer
-            // Remove current step visuals
-            if (step.element) step.element.remove();
-            if (step.lineLayer) route.group.removeLayer(step.lineLayer);
-            if (step.connectorLine) route.group.removeLayer(step.connectorLine);
-            if (step.nextConnector) route.group.removeLayer(step.nextConnector);
-            // Also remove the connecting line to next step (if any)
-            if (step.connectorLine) route.group.removeLayer(step.connectorLine);
-            currentStepIndex++; // Advance step
-            nextStepReady = true; // UNLOCK
-            // If the route is finished, this will be handled in the next GPS loop
-            if (currentStepIndex >= steps.length) {
-                // Remove route box
-                const finishedIndex = route.routeIndex;
-                const finishedBox = document.getElementById(`route-box-${finishedIndex}`);
-                if (finishedBox) finishedBox.remove();
+            stepMsg.onend = () => {
+                // Advance step after speaking
+                advanceStep();
+            };
 
-                // Remove visuals
-                try { map.removeControl(route.rc); } catch {}
-                try { map.removeLayer(route.group); } catch {}
+            document.getElementById("ai-tip").textContent = `Next: ${step.text} (${stepDistanceSpeech})`;
 
-                // Remove from array
-                routes = routes.filter(r => r.routeIndex !== finishedIndex);
-
-                // Rebuild route numbering & chain
-                rebuildRoutes();
-
-                // ✅ Auto-activate next route (if any)
-                if (routes.length > 0) {
-                    activeRouteIndex = 0;
-                    currentStepIndex = 0;
-                    nextStepReady = true;
-                    document.getElementById("ai-tip").textContent = "Starting next route...";
-                    
-                    setTimeout(() => {
-                        try { speakCurrentStep(); } catch {}
-                    }, 300);
-                } else {
-                    activeRouteIndex = null;
-                    currentStepIndex = 0;
-                    document.getElementById("ai-tip").textContent = "All routes completed ✅";
-                }
-            }
-          };
-          
-          ecoMsg.onend = advanceStep; // After eco tip, advance/unlock
-
-          stepMsg.onend = () => {
-            // Stop any speech (if a warning was inserted) and speak eco tip
-            if (speechSynthesis.speaking) { speechSynthesis.cancel(); }
-            document.getElementById("ai-tip").textContent = `Tip: ${stepEco.tip}`; 
-            speechSynthesis.speak(ecoMsg);
-          };
-          
-          // ✅ Smart Failsafe Timer (checks distance instead of time only)
-          clearTimeout(speechTimer);
-          speechTimer = setTimeout(() => {
-            const driverMoved = lastStepLatLng ? latlng.distanceTo(lastStepLatLng) > 25 : false;
-            const stillFarFromStep = distanceToStep > 120;
-            const longSinceLastAdvance = Date.now() - lastStepAdvanceTime > 60000; // 60s
-            if (currentSpeed < 5) return; // Don't advance while stopped
-            if (driverMoved && distanceToStep <= 80) {
-              console.warn("Driver reached step — advancing.");
-              advanceStep();
-            } else if (longSinceLastAdvance && stillFarFromStep) {
-              console.warn("Idle too long — skipping speech repeat only.");
-              nextStepReady = true;
-            }
-          }, 10000); // recheck every 10 s instead of fixed 15 s
-
-          // Start the speech chain
-          document.getElementById("ai-tip").textContent = `Step ${currentStepIndex + 1}: ${step.text}`;
-          lastStepLatLng = latlng;                 // Save position when step starts
-          lastStepAdvanceTime = Date.now();        // Reset step timer
-          speechSynthesis.speak(stepMsg);
-
-        } else {
-            // Fallback: advance/unlock immediately
-            document.getElementById("ai-tip").textContent = `Tip: ${stepEco.tip}`;
+            rememberSpeech("step", stepMsg.text);
+            try { speechSynthesis.resume(); } catch {}
+            speechSynthesis.speak(stepMsg);
+        }
+          else {
             // Remove current step visuals
             if (step.element) step.element.remove();
             if (step.lineLayer) route.group.removeLayer(step.lineLayer);
@@ -721,6 +781,39 @@ async function adaptiveAIDashboard(latlng, heading) {
   document.getElementById("gear").textContent = eco.gear;
   document.getElementById("throttle").textContent = eco.throttle + "%";
 }
+
+function speakCurrentStep() {
+    if (activeRouteIndex === null || !routes[activeRouteIndex]) return;
+
+    const route = routes[activeRouteIndex];
+    const step = route.steps[currentStepIndex];
+    if (!step) return;
+
+    const stepDistanceSpeech = 
+        step.distance < 1000 
+            ? `${step.distance.toFixed(0)} meters`
+            : `${(step.distance / 1000).toFixed(1)} kilometers`;
+
+    if ("speechSynthesis" in window) {
+        try { speechSynthesis.cancel(); } catch {}
+
+        const stepMsg = new SpeechSynthesisUtterance(`${step.text}. Proceed for ${stepDistanceSpeech}.`);
+        stepMsg.rate = 1; 
+        stepMsg.pitch = 1;
+
+        stepMsg.onend = () => {
+            currentStepIndex++;
+            nextStepReady = true;
+        };
+
+        document.getElementById("ai-tip").textContent =
+            `Next: ${step.text} (${stepDistanceSpeech})`;
+
+        rememberSpeech("step", stepMsg.text);
+        speechSynthesis.speak(stepMsg);
+    }
+}
+
 /* ===== GPS speed and idle detection (Unchanged) ===== */
 let lastLatLng=null, lastGPSPos=null, lastGPSTime=null, idleStart=null;
 const IDLE_THRESHOLD=3, IDLE_TIME=60;
@@ -960,6 +1053,14 @@ async function createRoute(start, end, color, marker = null, index = null) {
 
         // Remove box
         box.remove();
+        // ✅ HARD STOP step engine
+        activeRouteIndex = null;
+        currentStepIndex = 0;
+        nextStepReady = true;
+
+        // ✅ Clear speech memory so steps won't repeat
+        lastSpeech.type = null;
+        lastSpeech.text = "";
 
         // Remove from route array
         routes = routes.filter(r => r.routeIndex !== routeIndex);
@@ -980,7 +1081,9 @@ async function createRoute(start, end, color, marker = null, index = null) {
         } else {
             activeRouteIndex = null;
             currentStepIndex = 0;
-            document.getElementById("ai-tip").textContent = "No active route";
+            // ✅ show fresh eco driving tip instead of "no route"
+            document.getElementById("ai-tip").textContent = "Tip: " + ecoAdvisor(800, lastSlope, "").tip;
+
         }
     };
 
@@ -1043,53 +1146,6 @@ async function createRoute(start, end, color, marker = null, index = null) {
             speakCurrentStep();
         }
     });
-}
-
-/*================Multi-step AI Tip Blending + Voice (FIXED)=============*/
-function speakCurrentStep() {
-  if (activeRouteIndex === null || !routes[activeRouteIndex]) return;
-  const route = routes[activeRouteIndex];
-  // Start from currentStepIndex, not just index 0
-  const step = route.steps[currentStepIndex]; 
-  if (!step) return;
-
-  const eco = ecoAdvisor(step.distance, step.elev, step.text);
-  const stepDistance = step.distance < 1000 ? `${step.distance.toFixed(0)} meters` : `${(step.distance / 1000).toFixed(1)} kilometers`;
-
-  // 1. Speak Step Instruction and Distance
-  const stepMsg = new SpeechSynthesisUtterance(
-    `${currentStepIndex === 0 ? 'Starting route. ' : ''}${step.text}. Proceed for ${stepDistance}`
-  );
-  stepMsg.rate = 1; stepMsg.pitch = 1;
-  
-  // 2. Speak Eco Tip after step instruction (REMOVED SPEED/GEAR)
-  const ecoMsg = new SpeechSynthesisUtterance(
-    `Eco Tip: ${eco.tip}`
-  );
-  ecoMsg.rate = 1; ecoMsg.pitch = 1;
-
-  if ("speechSynthesis" in window) {
-      if (speechSynthesis.speaking) { speechSynthesis.cancel(); } // Ensure no old messages interfere
-
-      const advanceStepOnEnd = () => {
-          // Manually advance step and unlock if needed
-      }
-
-    // Chain the messages
-    stepMsg.onend = () => {
-      // Update tip box to Eco Tip after step instruction finishes
-      document.getElementById("ai-tip").textContent = `Tip: ${eco.tip}`; 
-      speechSynthesis.speak(ecoMsg);
-    };
-    
-    ecoMsg.onend = advanceStepOnEnd; // Use the same end logic as the main loop to advance
-
-    // Start the speech chain and update tip box to Step Instruction
-    document.getElementById("ai-tip").textContent = `Step ${currentStepIndex + 1}: ${step.text}`; 
-    speechSynthesis.speak(stepMsg);
-  } else {
-    document.getElementById("ai-tip").textContent = `Tip: ${eco.tip}`;
-  }
 }
 
 /* ===== Add waypoint on map click (Unchanged) ===== */

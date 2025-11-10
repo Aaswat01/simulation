@@ -178,7 +178,25 @@ align-items:center;color:#fff;font-size:0.9rem;}
   </div>
 </div> <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
-<script>
+<script> 
+// ✅ Enable rotation by applying transform on the map container
+let currentMapRotation = 0;
+
+function rotateMap(angle) {
+    currentMapRotation = angle;
+
+    const mapPane = map.getPane('mapPane');
+    if (mapPane) {
+        mapPane.style.transform = `rotate(${angle}deg)`;
+        mapPane.style.transformOrigin = "center center";
+    }
+
+    // ✅ Keep interaction correct by rotating controls opposite direction
+    const controlPane = map.getPane('controlPane');
+    if (controlPane) {
+        controlPane.style.transform = `rotate(${-angle}deg)`;
+    }
+}
 /* ===== Map Init ===== */
 // Setting a non-specific initial view. GPS will immediately overwrite this to the user's actual location.
 const map=L.map('map').setView([0, 0], 2); 
@@ -258,6 +276,10 @@ let currentRoadType = "city";
 let lastStepLatLng = null;
 let lastStepAdvanceTime = 0;
 let lastSlope = 0;
+let lastSlopeCategory = "";
+let lastEcoVoiceTime = 0;
+
+
 /* ===== Preview Route State ===== */
 let preview = {
   active: false,
@@ -411,7 +433,7 @@ async function getRoadType(latlng) {
 /* ===== Unified Eco Advisor (Independent from Steps) ===== */
 function ecoAdvisor(distAhead, slope, turnText) {
     let tip = "Drive smoothly";
-    let speed = 50;
+    let speed = 40;
     let gear = 3;
     let throttle = 45;
 
@@ -422,18 +444,18 @@ function ecoAdvisor(distAhead, slope, turnText) {
             speed = 80; 
             gear = 5; 
             throttle = 55; 
-            tip = "Maintain steady speed on highway";
+            tip = "Maintain steady speed";
             break;
 
         case "city":
-            speed = 40; 
+            speed = 30; 
             gear = 3; 
             throttle = 40; 
             tip = "City driving — anticipate stops";
             break;
 
         case "residential":
-            speed = 35; 
+            speed = 25; 
             gear = 3; 
             throttle = 35; 
             tip = "Residential zone — maintain low speed";
@@ -463,12 +485,12 @@ function ecoAdvisor(distAhead, slope, turnText) {
         gear = 4;
     }
 
-    // Long forward straight (independent)
-    if (distAhead > 700) {
-        tip += " | Long straight road ahead";
+    // ✅ Straight road hint (optional)
+    if (distAhead > 700 && slope > -3 && slope < 3) {
+        tip = "Long straight road – steady drive.";
     }
-
     return { speed, gear, throttle, tip };
+
 }
 
 /* ===== Speech Visibility Failsafe ===== */
@@ -494,7 +516,7 @@ setInterval(() => {
     const idleTime = Date.now() - lastSpeech.timestamp;
 
     // If speech engine stalled for > 10 seconds → repeat last line
-    if (!speechSynthesis.speaking && idleTime > 10000 && lastSpeech.text) {
+    if (!speechSynthesis.speaking && idleTime > 15000 && lastSpeech.type !== "step" && lastSpeech.type !== "warning") {
         console.warn("🔁 Auto-repeat triggered:", lastSpeech.text);
 
         try { speechSynthesis.cancel(); } catch {}
@@ -505,39 +527,57 @@ setInterval(() => {
         lastSpeech.timestamp = Date.now(); // refresh memory timestamp
     }
 }, 5000);
-/* ===== Independent Global Tip Engine (Every 20 sec) ===== */
+
+/* ✅ SMART TIP ENGINE — Every 15 sec, no repetition, dynamic */
+let lastTip = "";
 let lastTipTime = 0;
 
 setInterval(() => {
     if (!userMarker) return;
     if (document.visibilityState !== "visible") return;
+    if (activeRouteIndex !== null) return; // do NOT speak tips during navigation steps
 
     const now = Date.now();
-    if (now - lastTipTime < 20000) return; 
+    if (now - lastTipTime < 15000) return;
     lastTipTime = now;
 
-    // ✅ Allow tips even when car is slow
-    const latlng = userMarker.getLatLng();
-    const speed = calculateGPSSpeed(latlng);
-
-    // DO NOT block tips by speed (remove speed < 6 condition)
-
+    // ✅ Get dynamic advice
     const eco = ecoAdvisor(800, lastSlope, "");
 
-    const msg = new SpeechSynthesisUtterance(`Tip: ${eco.tip}`);
-    msg.rate = 1;
-    msg.pitch = 1;
+    // ✅ Create a list of short random eco tips
+    const tips = [
+        eco.tip,
+        "Maintain a steady throttle.",
+        "Avoid sudden braking.",
+        "Smooth acceleration improves efficiency.",
+        "Coast when possible.",
+        "Use engine braking on slopes.",
+        "Plan your turns early.",
+        "Keep a safe following distance.",
+        "Avoid unnecessary lane changes."
+    ];
 
-    // ✅ Do NOT cancel step/warning speech
-    if (lastSpeech.type !== "step" && lastSpeech.type !== "warning") {
-        try { speechSynthesis.cancel(); } catch {}
+    // ✅ Pick a random tip
+    let tip = tips[Math.floor(Math.random() * tips.length)];
+
+    // ✅ Avoid repeating previous tip
+    while (tip === lastTip) {
+      tip = tips[Math.floor(Math.random() * tips.length)];  
     }
+    lastTip = tip;
+    // ✅ DO NOT interrupt step or warning
+    if (lastSpeech.type === "step"|| lastSpeech.type === "warning"|| lastSpeech.type === "near-step") return;
+
+    const msg = new SpeechSynthesisUtterance(`Tip: ${tip}`);
+    msg.rate = 1; msg.pitch = 1;
 
     rememberSpeech("tip", msg.text);
     speechSynthesis.speak(msg);
 
-}, 5000);
+    // ✅ Update UI box
+    document.getElementById("ai-tip").textContent = `Tip: ${tip}`;
 
+}, 3000);
 
 /* ===== Driver Behavior Monitoring (Unchanged) ===== */
 let driverStats = { overspeed: 0, harshAccel: 0, totalPoints: 0 };
@@ -558,16 +598,6 @@ function updateDriverBehavior(currentSpeed, eco) {
         spokenWarnings.delete('overspeed'); // Clear warning if speed is fine
     }
 
-    // Harsh acceleration detection
-    const lastThrottle = parseFloat(document.getElementById("throttle").dataset.lastThrottle || 0);
-    const currentThrottle = eco.throttle;
-    if (Math.abs(currentThrottle - lastThrottle) > 30) { // Adjusted tolerance to 30
-        driverStats.harshAccel++;
-        if (!spokenWarnings.has('harshAccel')) {
-            warnings.push("Harsh acceleration detected");
-            spokenWarnings.add('harshAccel');
-        }
-    }
     document.getElementById("throttle").dataset.lastThrottle = currentThrottle;
 
     // Voice alert for warnings
@@ -575,7 +605,7 @@ function updateDriverBehavior(currentSpeed, eco) {
         const msg = new SpeechSynthesisUtterance(warnings.join(" "));
         msg.rate = 1.2; msg.pitch = 1.2; // Make warnings more distinct
         // DO NOT cancel step or warning speech
-        if (lastSpeech.type !== "step", "tip" && lastSpeech.type !== "warning") {
+        if (lastSpeech.type !== "warning") {
             try { speechSynthesis.cancel(); } catch {}
         }
         // Cancel step speech for urgent warning
@@ -710,12 +740,11 @@ async function adaptiveAIDashboard(latlng, heading) {
 
       // Update Tip Box with upcoming step
       const upcomingStepDistance = step.distance < 1000 ? `${step.distance.toFixed(0)} m` : `${(step.distance / 1000).toFixed(1)} km`;
-      document.getElementById("ai-tip").textContent = `Next: ${step.text} (${upcomingStepDistance}) | Eco: ${eco.tip}`;
-
+      document.getElementById("ai-tip").textContent = `Next: ${step.text} (${upcomingStepDistance})`;
       if (!driverCountry) updateDriverCountry(latlng);
 
       // Voice/Step Trigger (FIXED)
-      if (distanceToStep <= 100 && nextStepReady) { // Trigger earlier at 100m
+      if (distanceToStep <= 20 && nextStepReady) { // Trigger earlier at 100m
         nextStepReady = false; // LOCK
         
         // Get specific eco advice for the upcoming turn (using the old eco advisor with step data)
@@ -735,6 +764,7 @@ async function adaptiveAIDashboard(latlng, heading) {
             stepMsg.onend = () => {
                 // Advance step after speaking
                 advanceStep();
+                nextStepReady = true;
             };
 
             document.getElementById("ai-tip").textContent = `Next: ${step.text} (${stepDistanceSpeech})`;
@@ -756,20 +786,64 @@ async function adaptiveAIDashboard(latlng, heading) {
       }
     } else {
       // Route finished
-      document.getElementById("ai-tip").textContent = "Destination reached ✅";
-      const distanceEl = document.getElementById(`route-distance-${route.routeIndex}`);
-      if (distanceEl) { distanceEl.textContent = `0.0 km remaining`; }
-        
-      if (activeRouteIndex !== null) { // Only speak once
-          if ("speechSynthesis" in window) speechSynthesis.speak(new SpeechSynthesisUtterance("Destination reached"));
+      // ✅ Destination reached logic with 10m radius auto-removal
+      const finalStep = steps[steps.length - 1];
+      const destLL = L.latLng(finalStep.lat, finalStep.lng);
+      const distToDest = latlng.distanceTo(destLL);
+
+      if (distToDest <= 10) {
+
+          // Speak only once
+          if ("speechSynthesis" in window) {
+              try { speechSynthesis.cancel(); } catch {}
+              const endMsg = new SpeechSynthesisUtterance("Destination reached.");
+              speechSynthesis.speak(endMsg);
+          }
+
+          document.getElementById("ai-tip").textContent = "Destination reached ✅";
+
+          // Remove route visuals
+          try { map.removeControl(route.rc); } catch {}
+          try { map.removeLayer(route.group); } catch {}
+
+          // Remove waypoint marker
+          const destIndex = waypointMarkers.length - 1;
+          if (waypointMarkers[destIndex]) {
+              map.removeLayer(waypointMarkers[destIndex]);
+              waypointMarkers.splice(destIndex, 1);
+              waypoints.splice(destIndex + 1, 1);
+          }
+
+          // Remove route box
+          const box = document.getElementById(`route-box-${route.routeIndex}`);
+          if (box) box.remove();
+
+          // Remove from routes list
+          routes.splice(activeRouteIndex, 1);
+
+          // Reset engine
           activeRouteIndex = null;
           currentStepIndex = 0;
           nextStepReady = true;
+
+          // Rebuild remaining chain
+          rebuildRoutes();
+
+          // Auto-activate next route (if any)
+          if (routes.length > 0) {
+              activeRouteIndex = 0;
+              currentStepIndex = 0;
+              nextStepReady = true;
+              setTimeout(() => speakCurrentStep(), 300);
+          }
+
+          return; // ✅ FULL STOP
       }
     }
   } else {
     // 4. Update Tip Box with General Eco Tip (when no route is active)
-    document.getElementById("ai-tip").textContent = `Tip: ${eco.tip} | Road: ${eco.roadType}`;
+    document.getElementById("ai-tip").textContent = `Tip: ${eco.tip}`;
+    speakEcoAdvisor(eco);
   }
 
   // 5. Apply dynamic eco hints and update dashboard (Always runs)
@@ -778,6 +852,21 @@ async function adaptiveAIDashboard(latlng, heading) {
   document.getElementById("speed").textContent = eco.speed + " km/h";
   document.getElementById("gear").textContent = eco.gear;
   document.getElementById("throttle").textContent = eco.throttle + "%";
+}
+function advanceStep() {
+    const route = routes[activeRouteIndex];
+    if (!route) return;
+
+    const step = route.steps[currentStepIndex];
+    if (step) {
+        if (step.element) step.element.remove();
+        if (step.lineLayer) route.group.removeLayer(step.lineLayer);
+        if (step.connectorLine) route.group.removeLayer(step.connectorLine);
+    }
+    currentStepIndex++;
+    nextStepReady = true;
+    // Do not speak immediately after removing → speakCurrentStep() handles next
+    setTimeout(() => speakCurrentStep(), 300);
 }
 
 function speakCurrentStep() {
@@ -889,17 +978,23 @@ if(navigator.geolocation){
             map.setView(latlng,22); // Centers map on user's actual location
         } else {
             userMarker.setLatLng(latlng);
-            lockCarToCenter();   // ✅ keeps car locked to center
+            lockCarToCenter(); // ✅ now works 100%
         }
         // 🧭 Auto-follow logic: Keep car centered only if user hasn’t manually moved
+        // ✅ Smooth map follow + rotation (G1 MODE)
         if (autoFollow) {
-          map.flyTo(latlng, map.getZoom(), {
-            animate: true,
-            duration: 0.7,    // smooth easing
-            easeLinearity: 0.2
-          });
-        }
-                        
+            map.setView(latlng, map.getZoom(), { animate: false });
+
+            // Apply rotation angle = -heading
+            rotateMap(-heading);
+
+        } else {
+            // HYBRID MODE: If car moves more than 30m, soft recenter
+            const drift = lastLatLng ? latlng.distanceTo(lastLatLng) : 0;
+            if (drift > 30) {
+                map.panTo(latlng, { animate: true, duration: 0.6 });
+            }
+        }  
         // ROTATE THE CAR SVG (The core fix for direction)
         const carEl = document.getElementById('user-car-svg');
         if (carEl) {
@@ -1106,6 +1201,12 @@ async function createRoute(start, end, color, marker = null, index = null) {
 
             const div = document.createElement("div");
             div.className = "route-step";
+            div.onmouseenter = () => {
+                line.setStyle({ weight: 9, opacity: 1, color: "#FFFF33" });
+            };
+            div.onmouseleave = () => {
+                line.setStyle({ weight: 5, opacity: 0.9, color: routeColor });
+            };
             div.innerHTML = `<b>${s.text}</b><div>${(s.distance / 1000).toFixed(2)} km | Elev ${elev.toFixed(1)} m`;
             content.appendChild(div);
 
@@ -1251,17 +1352,7 @@ locateBtn.addEventListener("click", () => {
 
   const userPos = userMarker.getLatLng();
   map.setView(userPos, 19, { animate: true });
-  // ✅ Always keep car at exact center like Google Maps
-  // === Route de-duplication + center-lock helpers ===
-  function lockCarToCenter() {
-    if (!userMarker) return;
-    if (autoFollow) {
-      const pos = userMarker.getLatLng();
-      map.setView(pos, map.getZoom(), { animate: false });
-    }
-  }
 
-  // Keep one UI box per routeIndex, and map an endKey to the chosen routeIndex.
   // This prevents duplicate boxes and repeated boxes for the same destination.
   const routeBoxByIndex = new Map();     // routeIndex -> { box, header, content }
   const routeIndexByEndKey = new Map();  // endKey     -> routeIndex
@@ -1327,41 +1418,66 @@ let results = [];
 let searchTimer = null;
 
 async function getSearchResults(query) {
-  const center = userMarker ? userMarker.getLatLng() : map.getCenter();
-  const lang = driverCountry ? driverCountry.toLowerCase() : "en";
+    const center = userMarker ? userMarker.getLatLng() : map.getCenter();
+    const lang = driverCountry ? driverCountry.toLowerCase() : "en";
 
-  // Use Photon first (faster + better local context)
-  const photonURL = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&lat=${center.lat}&lon=${center.lng}&limit=8&lang=${lang}`;
-  try {
-    const res = await fetch(photonURL, { cache: "no-store" });
-    const json = await res.json();
-    if (json.features && json.features.length) {
-      return json.features.map(f => ({
-        name: f.properties.name || f.properties.street || f.properties.locality || "Unnamed",
-        display_name: [f.properties.name, f.properties.city, f.properties.country].filter(Boolean).join(", "),
-        lat: f.geometry.coordinates[1],
-        lon: f.geometry.coordinates[0]
-      }));
-    }
-  } catch (err) {
-    console.warn("Photon failed, switching to Nominatim fallback:", err);
-  }
+    let allResults = [];
 
-  // Fallback: Nominatim (slower but reliable)
-  try {
-    const nomURL = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=8&addressdetails=1&accept-language=${lang}`;
-    const res = await fetch(nomURL, { cache: "no-store" });
-    const data = await res.json();
-    return data.map(f => ({
-      name: f.display_name.split(",")[0],
-      display_name: f.display_name,
-      lat: parseFloat(f.lat),
-      lon: parseFloat(f.lon)
-    }));
-  } catch (err) {
-    console.error("Nominatim failed:", err);
-    return [];
-  }
+    // 1️⃣ Photon search
+    try {
+        const photonURL = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&lat=${center.lat}&lon=${center.lng}&limit=8&lang=${lang}`;
+        const ph = await fetch(photonURL);
+        const json = await ph.json();
+        if (json.features) {
+            json.features.forEach(f => {
+                allResults.push({
+                    name: f.properties.name || f.properties.street || f.properties.locality || "Unnamed",
+                    display_name: [f.properties.name, f.properties.city, f.properties.country]
+                        .filter(Boolean).join(", "),
+                    lat: f.geometry.coordinates[1],
+                    lon: f.geometry.coordinates[0],
+                    score: 50
+                });
+            });
+        }
+    } catch (err) {}
+
+    // 2️⃣ Nominatim search
+    try {
+        const nomURL = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=8&addressdetails=1&accept-language=${lang}`;
+        const nm = await fetch(nomURL);
+        const data = await nm.json();
+        data.forEach(f => {
+            allResults.push({
+                name: f.display_name.split(",")[0],
+                display_name: f.display_name,
+                lat: parseFloat(f.lat),
+                lon: parseFloat(f.lon),
+                score: 70
+            });
+        });
+    } catch (err) {}
+
+    // 3️⃣ geocode.maps.co — POI/category search
+    try {
+        const mURL = `https://geocode.maps.co/search?q=${encodeURIComponent(query)}`;
+        const gr = await fetch(mURL);
+        const gd = await gr.json();
+        gd.forEach(f => {
+            allResults.push({
+                name: f.display_name.split(",")[0],
+                display_name: f.display_name,
+                lat: parseFloat(f.lat),
+                lon: parseFloat(f.lon),
+                score: 90
+            });
+        });
+    } catch (err) {}
+
+    // ✅ SORT by score DESC (most accurate first)
+    allResults.sort((a, b) => b.score - a.score);
+
+    return allResults.slice(0, 10);
 }
 
 // Debounced input listener for smooth UX

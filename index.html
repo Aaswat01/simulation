@@ -430,67 +430,54 @@ async function getRoadType(latlng) {
 }
 
 /* ===== Eco Advisor (MODIFIED for simplicity) ===== */
-/* ===== Unified Eco Advisor (Independent from Steps) ===== */
 function ecoAdvisor(distAhead, slope, turnText) {
-    let tip = "Drive smoothly";
+    let tip = "";
     let speed = 40;
     let gear = 3;
     let throttle = 45;
 
-    // Road-type global logic
+    // ✅ Road type logic
     switch (currentRoadType) {
         case "highway":
         case "national highway":
-            speed = 80; 
-            gear = 5; 
-            throttle = 55; 
-            tip = "Maintain steady speed";
+            speed = 80; gear = 5; throttle = 55;
+            tip = "Highway — maintain steady speed.";
             break;
 
         case "city":
-            speed = 30; 
-            gear = 3; 
-            throttle = 40; 
-            tip = "City driving — anticipate stops";
+            speed = 30; gear = 3; throttle = 40;
+            tip = "City driving — anticipate stops.";
             break;
 
         case "residential":
-            speed = 25; 
-            gear = 3; 
-            throttle = 35; 
-            tip = "Residential zone — maintain low speed";
+            speed = 25; gear = 3; throttle = 35;
+            tip = "Residential zone — maintain low speed.";
             break;
 
         case "mountain":
-            speed = 35; 
-            gear = 2; 
-            throttle = 50; 
-            tip = "Mountain road — use engine braking";
+            speed = 35; gear = 2; throttle = 50;
+            tip = "Mountain road — use engine braking.";
             break;
 
         default:
-            tip = "Maintain smooth driving";
+            tip = "Maintain smooth driving.";
             break;
     }
 
-    // Global slope logic (independent)
+    // ✅ Slope logic
     if (slope > 2.5) {
-        tip += " | Downhill ahead";
-        throttle = 20;
-        gear = 3;
+        tip += " Downhill ahead.";
     } 
     else if (slope < -2.5) {
-        tip += " | Uphill ahead";
-        throttle = 60;
-        gear = 4;
+        tip += " Uphill ahead.";
     }
 
-    // ✅ Straight road hint (optional)
-    if (distAhead > 700 && slope > -3 && slope < 3) {
-        tip = "Long straight road – steady drive.";
+    // ✅ Straight road
+    if (distAhead > 700 && Math.abs(slope) < 3) {
+        tip += " Long straight road ahead.";
     }
-    return { speed, gear, throttle, tip };
 
+    return { speed, gear, throttle, tip, slope };
 }
 
 /* ===== Speech Visibility Failsafe ===== */
@@ -516,7 +503,7 @@ setInterval(() => {
     const idleTime = Date.now() - lastSpeech.timestamp;
 
     // If speech engine stalled for > 10 seconds → repeat last line
-    if (!speechSynthesis.speaking && idleTime > 15000 && lastSpeech.type !== "step" && lastSpeech.type !== "warning") {
+    if (!speechSynthesis.speaking && idleTime > 15000 && (lastSpeech.type === "step" || lastSpeech.type === "warning")) {
         console.warn("🔁 Auto-repeat triggered:", lastSpeech.text);
 
         try { speechSynthesis.cancel(); } catch {}
@@ -532,52 +519,28 @@ setInterval(() => {
 let lastTip = "";
 let lastTipTime = 0;
 
-setInterval(() => {
-    if (!userMarker) return;
-    if (document.visibilityState !== "visible") return;
-    if (activeRouteIndex !== null) return; // do NOT speak tips during navigation steps
-
+function speakEco(eco) {
     const now = Date.now();
-    if (now - lastTipTime < 15000) return;
-    lastTipTime = now;
+    
 
-    // ✅ Get dynamic advice
-    const eco = ecoAdvisor(800, lastSlope, "");
+    // Avoid spam
+    if (now - lastEcoVoiceTime < 12000) return;
 
-    // ✅ Create a list of short random eco tips
-    const tips = [
-        eco.tip,
-        "Maintain a steady throttle.",
-        "Avoid sudden braking.",
-        "Smooth acceleration improves efficiency.",
-        "Coast when possible.",
-        "Use engine braking on slopes.",
-        "Plan your turns early.",
-        "Keep a safe following distance.",
-        "Avoid unnecessary lane changes."
-    ];
+    // Priority (warning → step → eco)
+    if (lastSpeech.type === "warning" || lastSpeech.type === "step") return;
 
-    // ✅ Pick a random tip
-    let tip = tips[Math.floor(Math.random() * tips.length)];
+    lastEcoVoiceTime = now;
 
-    // ✅ Avoid repeating previous tip
-    while (tip === lastTip) {
-      tip = tips[Math.floor(Math.random() * tips.length)];  
-    }
-    lastTip = tip;
-    // ✅ DO NOT interrupt step or warning
-    if (lastSpeech.type === "step"|| lastSpeech.type === "warning"|| lastSpeech.type === "near-step") return;
+    const msg = new SpeechSynthesisUtterance(
+        `${eco.tip} Road type: ${currentRoadType}.`
+    );
 
-    const msg = new SpeechSynthesisUtterance(`Tip: ${tip}`);
-    msg.rate = 1; msg.pitch = 1;
+    msg.rate = 1;
+    msg.pitch = 1;
 
     rememberSpeech("tip", msg.text);
     speechSynthesis.speak(msg);
-
-    // ✅ Update UI box
-    document.getElementById("ai-tip").textContent = `Tip: ${tip}`;
-
-}, 3000);
+}
 
 /* ===== Driver Behavior Monitoring (Unchanged) ===== */
 let driverStats = { overspeed: 0, harshAccel: 0, totalPoints: 0 };
@@ -598,7 +561,7 @@ function updateDriverBehavior(currentSpeed, eco) {
         spokenWarnings.delete('overspeed'); // Clear warning if speed is fine
     }
 
-    document.getElementById("throttle").dataset.lastThrottle = currentThrottle;
+    document.getElementById("throttle").dataset.lastThrottle = eco.throttle;
 
     // Voice alert for warnings
     if ('speechSynthesis' in window && warnings.length) {
@@ -843,7 +806,7 @@ async function adaptiveAIDashboard(latlng, heading) {
   } else {
     // 4. Update Tip Box with General Eco Tip (when no route is active)
     document.getElementById("ai-tip").textContent = `Tip: ${eco.tip}`;
-    speakEcoAdvisor(eco);
+    speakEco(eco);
   }
 
   // 5. Apply dynamic eco hints and update dashboard (Always runs)
@@ -1420,7 +1383,17 @@ let searchTimer = null;
 async function getSearchResults(query) {
     const center = userMarker ? userMarker.getLatLng() : map.getCenter();
     const lang = driverCountry ? driverCountry.toLowerCase() : "en";
-
+    // ✅ Lat/Lng input detection
+    const latlngMatch = query.match(/^([-]?[0-9]+\.[0-9]+)[,\s]+([-]?[0-9]+\.[0-9]+)$/);
+    if (latlngMatch) {
+        return [{
+            name: "Pinned Location",
+            display_name: "Manual coordinate input",
+            lat: parseFloat(latlngMatch[1]),
+            lon: parseFloat(latlngMatch[2]),
+            score: 100
+        }];
+    }
     let allResults = [];
 
     // 1️⃣ Photon search

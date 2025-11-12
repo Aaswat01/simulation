@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9,9 +10,9 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{
-background:radial-gradient(circle at top left,#0f1c2e,#1c2b44,#2a3b60);
-font-family:"Segoe UI",Arial,sans-serif;color:#fff;
-height:100vh;display:flex;flex-direction:column;overflow:hidden;
+  background:radial-gradient(circle at top left,#0f1c2e,#1c2b44,#2a3b60);
+  font-family:"Segoe UI",Arial,sans-serif;color:#fff;
+  height:100vh;display:flex;flex-direction:column;overflow:hidden;
 }
 /* === HEADER === */
 .ai-tip-box{flex:0 0 auto;background:#ffa500;color:#000;border-radius:1vh;
@@ -38,13 +39,19 @@ font-weight:bold;cursor:pointer;box-shadow:0 0.4vh 1vh rgba(0,0,0,0.3);}
 border-radius:1vh;max-height:40vh;overflow-y:auto;z-index:2000;display:none;}
 .suggest-item{padding:0.8vh 1vw;border-bottom:1px solid rgba(255,255,255,0.1);cursor:pointer;}
 .suggest-item:hover{background:rgba(255,255,255,0.1);}
-/* === MAIN (Map now fills space) === */
+/* === MAIN === */
 .main-section{flex:1;display:flex;flex-direction:column;gap:1vh;padding:0 2vw 1vh;}
-.map-container{flex:1;position:relative;border-radius:1vh;overflow:hidden;
+.map-container,.camera{flex:1;position:relative;border-radius:1vh;overflow:hidden;
 border:1px solid rgba(255,255,255,0.2);box-shadow:0 0.5vh 1vh rgba(0,0,0,0.4);}
 .map{width:100%;height:100%;}
 #map-toggle{position:absolute;top:1vh;right:1vh;z-index:1000;background:#ff8c00;
 border:none;border-radius:1vh;padding:0.5vh 1vw;font-weight:bold;cursor:pointer;color:#000;}
+.camera img{width:100%;height:100%;object-fit:cover;filter:blur(10px) brightness(0.8);
+transition:filter 0.3s ease;}
+.camera button{position:absolute;left:50%;transform:translateX(-50%);bottom:1vh;
+padding:0.8vh 2vw;border:none;border-radius:1vh;color:#fff;font-weight:bold;cursor:pointer;}
+#enable-camera{background:#28a745;}
+#disable-camera{background:#dc3545;display:none;}
 /* === ROUTE PANEL === */
 #routePanel{position:absolute;bottom:2vh;left:2vw;width:270px;max-height:42vh;
 overflow-y:auto;background:rgba(0,0,0,0.6);border-radius:1vh;padding:0.5vh;color:#fff;z-index:999;}
@@ -59,24 +66,31 @@ align-items:center;color:#fff;font-size:0.9rem;}
 <body>
 <div class="ai-tip-box" id="ai-tip">Drive smoothly</div>
 <div class="stats-row">
-  <div class="stat-card speed-box"><div class="stat-label">Speed</div><div class="stat-value" id="speed">0 km/h</div></div>
-  <div class="stat-card gear-box"><div class="stat-label">Gear</div><div class="stat-value" id="gear">N</div></div>
-  <div class="stat-card throttle-box"><div class="stat-label">Throttle</div><div class="stat-value" id="throttle">0%</div></div>
+  <div class="stat-card speed-box"><div class="stat-label">Speed</div><div class="stat-value" id="speed">0 km/h</div></div>
+  <div class="stat-card gear-box"><div class="stat-label">Gear</div><div class="stat-value" id="gear">N</div></div>
+  <div class="stat-card throttle-box"><div class="stat-label">Throttle</div><div class="stat-value" id="throttle">0%</div></div>
 </div>
 
 <div class="search-row">
-  <input type="text" id="searchInput" placeholder="Search destination...">
-  <button id="micBtn">🎤</button>
-  <div id="suggestBox"></div>
+  <input type="text" id="searchInput" placeholder="Search destination...">
+  <button id="micBtn">🎤</button>
+  <div id="suggestBox"></div>
 </div>
 
 <div class="main-section">
-  <div class="map-container">
-    <div id="map" class="map"></div>
-    <button id="map-toggle">Full Map</button>
-    <div id="routePanel"></div>
-  </div>
-</div> <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <div class="map-container">
+    <div id="map" class="map"></div>
+    <button id="map-toggle">Full Map</button>
+    <div id="routePanel"></div>
+  </div>
+  <div class="camera">
+    <img src="/video_feed" id="camera-feed" alt="Camera">
+    <button id="enable-camera">Enable Camera</button>
+    <button id="disable-camera">Disable</button>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
 <script>
 /* ===== Map Init ===== */
@@ -86,566 +100,476 @@ const carIcon=L.icon({iconUrl:'https://cdn-icons-png.flaticon.com/512/3097/30971
 let userMarker=null,waypoints=[],waypointMarkers=[],routes=[],totalFuel=0;
 const colors=['#FF6B6B','#4DA6FF','#FFD93D','#6BCB77','#FF8C00','#9B59B6','#00BFA5'];
 
-/* ===== Eco Advisor (Unchanged) ===== */
+/* ===== Eco Advisor ===== */
 function ecoAdvisor(dist,elev,turnText){
-    const t=(turnText||'').toLowerCase();
-    let tip="Drive smoothly", speed=50, gear=3, throttle=45;
+    const t=(turnText||'').toLowerCase();
+    let tip="Drive smoothly", speed=50, gear=3, throttle=45;
 
-    // Road type detection
-    const roadType=t.includes("highway")?"highway":
-                   t.includes("city")?"city":
-                   t.includes("roundabout")?"roundabout":"normal";
+    // Road type detection
+    const roadType=t.includes("highway")?"highway":
+                   t.includes("city")?"city":
+                   t.includes("roundabout")?"roundabout":"normal";
 
-    if(t.includes("left")||t.includes("right")) { speed=25; gear=2; throttle=35; tip="Slow for turn"; }
-    else if(elev>6) { speed=30; gear=2; throttle=55; tip="Downhill"; }
-    else if(elev<-6){ speed=55; gear=5; throttle=25; tip="Uphill "; }
-    else if(dist>800){ speed=65; gear=5; throttle=50; tip="Long straight — steady speed"; }
-    else if(dist>300){ speed=55; gear=4; throttle=45; tip="Smooth cruising"; }
+    if(t.includes("left")||t.includes("right")) { speed=25; gear=2; throttle=35; tip="Slow for turn"; }
+    else if(elev>6) { speed=30; gear=2; throttle=55; tip="Uphill — maintain torque"; }
+    else if(elev<-6){ speed=55; gear=5; throttle=25; tip="Downhill — coast gently"; }
+    else if(dist>800){ speed=65; gear=5; throttle=50; tip="Long straight — steady speed"; }
+    else if(dist>300){ speed=55; gear=4; throttle=45; tip="Smooth cruising"; }
 
-    // Adjustments by road type
-    if(roadType==="highway"){ speed=Math.min(speed,80); gear=Math.max(gear,5); throttle=50; tip+=" — highway"; }
-    else if(roadType==="city"){ speed=Math.min(speed,50); gear=Math.min(gear,3); throttle=40; tip+=" — city"; }
-    else if(roadType==="roundabout"){ speed=25; gear=2; throttle=35; tip+=" — roundabout"; }
+    // Adjustments by road type
+    if(roadType==="highway"){ speed=Math.min(speed,80); gear=Math.max(gear,5); throttle=50; tip+=" — highway"; }
+    else if(roadType==="city"){ speed=Math.min(speed,50); gear=Math.min(gear,3); throttle=40; tip+=" — city"; }
+    else if(roadType==="roundabout"){ speed=25; gear=2; throttle=35; tip+=" — roundabout"; }
 
-    // Fuel saving hints
-    if(speed>70) tip="High speed — reduce for fuel saving";
-    if(throttle>60 && elev>3) tip="High throttle uphill — shift earlier";
+    // Fuel saving hints
+    if(speed>70) tip="High speed — reduce for fuel saving";
+    if(throttle>60 && elev>3) tip="High throttle uphill — shift earlier";
 
-    return {speed, gear, throttle, tip};
+    return {speed, gear, throttle, tip};
 }
 
-/* ===== Driver Behavior Monitoring (Unchanged) ===== */
+/* ===== Driver Behavior Monitoring ===== */
 let driverStats = { overspeed: 0, harshAccel: 0, totalPoints: 0 };
-let spokenWarnings = new Set();  // Track unique warnings spoken
+let spokenWarnings = new Set();  // Track unique warnings spoken
 
 function updateDriverBehavior(currentSpeed, eco) {
-    driverStats.totalPoints++;
-    let warnings = [];
+    driverStats.totalPoints++;
+    let warnings = [];
 
-    // Overspeed detection
-    if (currentSpeed > eco.speed + 5) {
-        driverStats.overspeed++;
-        if (!spokenWarnings.has('overspeed')) {
-            warnings.push("Overspeeding detected");
-            spokenWarnings.add('overspeed');
-        }
-    }
+    // Overspeed detection
+    if (currentSpeed > eco.speed + 5) {
+        driverStats.overspeed++;
+        if (!spokenWarnings.has('overspeed')) {
+            warnings.push("Overspeeding detected — Slow down!");
+            spokenWarnings.add('overspeed');
+        }
+    }
 
-    // Harsh acceleration detection
-    const lastThrottle = parseFloat(document.getElementById("throttle").dataset.lastThrottle || 0);
-    const currentThrottle = eco.throttle;
-    if (Math.abs(currentThrottle - lastThrottle) > 25) {
-        driverStats.harshAccel++;
-        if (!spokenWarnings.has('harshAccel')) {
-            warnings.push("Harsh acceleration");
-            spokenWarnings.add('harshAccel');
-        }
-    }
-    document.getElementById("throttle").dataset.lastThrottle = currentThrottle;
+    // Harsh acceleration detection
+    const lastThrottle = parseFloat(document.getElementById("throttle").dataset.lastThrottle || 0);
+    const currentThrottle = eco.throttle;
+    if (Math.abs(currentThrottle - lastThrottle) > 25) {
+        driverStats.harshAccel++;
+        if (!spokenWarnings.has('harshAccel')) {
+            warnings.push("Harsh acceleration — Smooth throttle!");
+            spokenWarnings.add('harshAccel');
+        }
+    }
+    document.getElementById("throttle").dataset.lastThrottle = currentThrottle;
 
-    // Habitual warnings
-    if (driverStats.overspeed / driverStats.totalPoints > 0.3 && !spokenWarnings.has('overspeedHabit')) {
-        warnings.push("Overspeed detected!");
-        spokenWarnings.add('overspeedHabit');
-    }
+    // Habitual warnings
+    if (driverStats.overspeed / driverStats.totalPoints > 0.3 && !spokenWarnings.has('overspeedHabit')) {
+        warnings.push("Overspeed habit detected!");
+        spokenWarnings.add('overspeedHabit');
+    }
+    if (driverStats.harshAccel / driverStats.totalPoints > 0.2 && !spokenWarnings.has('throttleHabit')) {
+        warnings.push("Throttle habit — Drive smoothly!");
+        spokenWarnings.add('throttleHabit');
+    }
 
-    // Voice alert (Eco tip is handled separately in adaptiveAIDashboard now)
-    if ('speechSynthesis' in window && warnings.length) {
-        const msg = new SpeechSynthesisUtterance(warnings.join(" "));
-        msg.rate = 1; msg.pitch = 1;
-        speechSynthesis.speak(msg);
-    }
+    // Merge eco tip with warnings
+    eco.tip = eco.tip + (warnings.length ? " — " + warnings.join(" ") : "");
+
+    // Voice alert
+    if ('speechSynthesis' in window && warnings.length) {
+        const msg = new SpeechSynthesisUtterance(warnings.join(" "));
+        msg.rate = 1; msg.pitch = 1;
+        speechSynthesis.speak(msg);
+    }
 }
 
 function dynamicEcoAdvisor(currentSpeed, slopeAhead, distToNextStep){
-    // Determine speed & throttle purely based on elevation change
-    let tip = "Drive smoothly", speed = 50, gear = 3, throttle = 45;
-    if(slopeAhead > 5){ speed = Math.min(currentSpeed + 10, 70); throttle = 55; tip = "Uphill — maintain momentum"; gear = 4; }
-    else if(slopeAhead < -5){ speed = Math.max(currentSpeed - 10, 25); throttle = 25; tip = "Downhill — control speed"; gear = 3; }
-    else { speed = 50; throttle = 45; tip = "Smooth road"; gear = 3; }
+    // Determine speed & throttle purely based on elevation change
+    let tip = "Drive smoothly", speed = 50, gear = 3, throttle = 45;
+    if(slopeAhead > 5){ speed = Math.min(currentSpeed + 10, 70); throttle = 55; tip = "Uphill — maintain momentum"; gear = 4; }
+    else if(slopeAhead < -5){ speed = Math.max(currentSpeed - 10, 25); throttle = 25; tip = "Downhill — control speed"; gear = 3; }
+    else { speed = 50; throttle = 45; tip = "Smooth road"; gear = 3; }
 
-    // Longer straight: slight speed increase
-    if(distToNextStep > 800) speed = Math.min(speed + 10, 70);
-    // Short: slow down
-    if(distToNextStep < 100) speed = Math.max(speed - 10, 25);
+    // Longer straight: slight speed increase
+    if(distToNextStep > 800) speed = Math.min(speed + 10, 70);
+    // Short: slow down
+    if(distToNextStep < 100) speed = Math.max(speed - 10, 25);
 
-    return {speed, gear, throttle, tip};
+    return {speed, gear, throttle, tip};
 }
 
 async function getElevations(coords){
-    try{
-        const locs=coords.map(p=>`${p.lat},${p.lng}`).join('|');
-        const r=await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${encodeURIComponent(locs)}`);
-        const d=await r.json();
-        return d.results.map(x=>x.elevation);
-    }catch{return new Array(coords.length).fill(0);}
+    try{
+        const locs=coords.map(p=>`${p.lat},${p.lng}`).join('|');
+        const r=await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${encodeURIComponent(locs)}`);
+        const d=await r.json();
+        return d.results.map(x=>x.elevation);
+    }catch{return new Array(coords.length).fill(0);}
 }
 
-/* ===== Multi-Step Route Awareness (Unchanged) ===== */
+/* ===== Multi-Step Route Awareness ===== */
 async function getUpcomingSteps(latlng, maxSteps=5){
-  if(!routes.length) return [];
-  const upcomingSteps=[];
-  routes.forEach(r=>{
-    let nearestIdx=-1, minDist=Infinity;
-    r.steps.forEach((s,i)=>{
-      const d=latlng.distanceTo([s.lat,s.lng]);
-      if(d<minDist){ minDist=d; nearestIdx=i; }
-    });
-    if(nearestIdx!==-1){
-      for(let j=nearestIdx; j<Math.min(r.steps.length, nearestIdx+maxSteps); j++){
-        upcomingSteps.push(r.steps[j]);
-      }
-    }
-  });
-  return upcomingSteps;
+  if(!routes.length) return [];
+  const upcomingSteps=[];
+  routes.forEach(r=>{
+    let nearestIdx=-1, minDist=Infinity;
+    r.steps.forEach((s,i)=>{
+      const d=latlng.distanceTo([s.lat,s.lng]);
+      if(d<minDist){ minDist=d; nearestIdx=i; }
+    });
+    if(nearestIdx!==-1){
+      for(let j=nearestIdx; j<Math.min(r.steps.length, nearestIdx+maxSteps); j++){
+        upcomingSteps.push(r.steps[j]);
+      }
+    }
+  });
+  return upcomingSteps;
 }
 
-/* ====== Step-by-Step AI Voice Guidance & Dashboard Update (FIXED) ====== */
+/* ===== Track next step per route ===== */
+/* ====== Step-by-Step AI Voice Guidance & Dashboard Update ====== */
 let activeRouteIndex = null;
 let currentStepIndex = 0;
 let nextStepReady = true;
 
 async function adaptiveAIDashboard(latlng, heading) {
-  const currentSpeed = calculateGPSSpeed(latlng);
-  const slopeData = await predictElevationAhead(latlng, heading);
-  const slope = slopeData.slope;
+  const currentSpeed = calculateGPSSpeed(latlng);
+  const slopeData = await predictElevationAhead(latlng, heading);
+  const slope = slopeData.slope;
 
-  // Base eco tip
-  let eco = ecoAdvisor(0, slope, "");
+  // Base eco tip
+  let eco = ecoAdvisor(0, slope, "");
 
-  // If there’s an active route
-  if (routes.length && activeRouteIndex !== null) {
-    const route = routes[activeRouteIndex];
-    const steps = route.steps;
-    const routeDisplayIndex = route.routeIndex; // Get the 0-based index
+  // If there’s an active route
+  if (routes.length && activeRouteIndex !== null) {
+    const route = routes[activeRouteIndex];
+    const steps = route.steps;
+    if (currentStepIndex < steps.length) {
+      const step = steps[currentStepIndex];
+      const stepLatLng = L.latLng(step.lat, step.lng);
+      const distanceToStep = latlng.distanceTo(stepLatLng);
 
-    if (currentStepIndex < steps.length) {
-      const step = steps[currentStepIndex];
-      const stepLatLng = L.latLng(step.lat, step.lng);
-      const distanceToStep = latlng.distanceTo(stepLatLng);
+      // Update tip box continuously for current step
+      document.getElementById("ai-tip").textContent = `Next: ${step.text}`;
 
-      // --- Remaining Distance Calculation (Unchanged) ---
-      let remainingDistance = distanceToStep; // Start with distance to current step
-      // Add sum of distances of all subsequent steps
-      for (let i = currentStepIndex + 1; i < steps.length; i++) {
-        remainingDistance += steps[i].distance;
-      }
+      // Only trigger voice + eco update when driver reaches within 50 m
+      if (distanceToStep <= 50 && nextStepReady) {
+        nextStepReady = false;
 
-      // Update distance display (routeIndex + 1 for 1-based display)
-      const distanceEl = document.getElementById(`route-distance-${routeDisplayIndex}`);
-      if (distanceEl) {
-        distanceEl.textContent = `${(remainingDistance / 1000).toFixed(1)} km remaining`;
-      }
-      // --- END Remaining Distance Calculation ---
+        const ecoNow = dynamicEcoAdvisor(currentSpeed, slope, distanceToStep);
+        eco = ecoNow;
 
-      // Display upcoming step + distance in tip box (before it's reached)
-      const upcomingStepDistance = step.distance < 1000 ? `${step.distance.toFixed(0)} m` : `${(step.distance / 1000).toFixed(1)} km`;
-      document.getElementById("ai-tip").textContent = `Next: ${step.text} (${upcomingStepDistance})`;
+        // Speak step instruction
+        if ("speechSynthesis" in window) {
+          const msg = new SpeechSynthesisUtterance(
+            `Step ${currentStepIndex + 1}: ${step.text}. Recommended speed ${ecoNow.speed} kilometers per hour, gear ${ecoNow.gear}. ${ecoNow.tip}`
+          );
+          msg.rate = 1; msg.pitch = 1;
+          msg.onend = () => {
+            step.spoken = true;
+            currentStepIndex++;
+            nextStepReady = true; // Allow next step only after current one finishes
+          };
+          speechSynthesis.speak(msg);
+        }
 
+        // Update tip visually with eco info
+        document.getElementById("ai-tip").textContent =
+          `${ecoNow.tip} — ${step.text}`;
+      }
+    } else {
+      // Route finished
+      document.getElementById("ai-tip").textContent = "Destination reached ✅";
+      if ("speechSynthesis" in window)
+        speechSynthesis.speak(new SpeechSynthesisUtterance("Destination reached"));
+      activeRouteIndex = null;
+      currentStepIndex = 0;
+      nextStepReady = true;
+    }
+  }
 
-      // FIX: Only trigger voice + eco update when driver reaches within 50 m AND nextStepReady is true
-      if (distanceToStep <= 50 && nextStepReady) {
-        nextStepReady = false; // LOCK: Prevent re-entry
+  // Apply dynamic eco hints even without route
+  updateDriverBehavior(currentSpeed, eco);
 
-        const ecoNow = dynamicEcoAdvisor(currentSpeed, slope, distanceToStep);
-        eco = ecoNow;
-        // Determine step distance for speech
-        const stepDistanceSpeech = step.distance < 1000 ? `${step.distance.toFixed(0)} meters` : `${(step.distance / 1000).toFixed(1)} kilometers`;
-
-        // Voice alert (sequential speech)
-        if ("speechSynthesis" in window) {
-          // 1. Speak Step Instruction and Distance
-          const stepMsg = new SpeechSynthesisUtterance(
-            `${step.text}. Proceed for ${stepDistanceSpeech}.`
-          );
-          stepMsg.rate = 1; stepMsg.pitch = 1;
-          
-          // 2. Speak Eco Tip after step instruction
-          const ecoMsg = new SpeechSynthesisUtterance(
-            `Eco Tip: Recommended speed ${ecoNow.speed} kilometers per hour, gear ${ecoNow.gear}. ${ecoNow.tip}`
-          );
-          ecoMsg.rate = 1; ecoMsg.pitch = 1;
-
-          // Chain the messages
-          // After step instruction, update tip box to Eco Tip and speak eco tip
-          stepMsg.onend = () => {
-            // Stop any previous speech before starting the new one (extra safety)
-            if (speechSynthesis.speaking) { speechSynthesis.cancel(); }
-            document.getElementById("ai-tip").textContent = `Tip: ${ecoNow.tip}`; 
-            speechSynthesis.speak(ecoMsg);
-          };
-          
-          // After eco tip, advance to next step and UNLOCK
-          ecoMsg.onend = () => {
-            step.spoken = true;
-            if (step.element) { step.element.remove(); }
-            if (step.lineLayer) { route.group.removeLayer(step.lineLayer); }
-            currentStepIndex++; // Advance step
-            nextStepReady = true; // UNLOCK
-          };
-          
-          // Start the speech chain and update tip box to Step Instruction
-          document.getElementById("ai-tip").textContent = `Step ${currentStepIndex + 1}: ${step.text}`;
-          // Stop any previous speech before starting the new one
-          if (speechSynthesis.speaking) { speechSynthesis.cancel(); }
-          speechSynthesis.speak(stepMsg);
-        } else {
-            // Fallback for non-speech browsers: update tip box and advance/unlock immediately
-            document.getElementById("ai-tip").textContent = `Tip: ${ecoNow.tip}`;
-            step.spoken = true;
-            if (step.element) { step.element.remove(); }
-            if (step.lineLayer) { route.group.removeLayer(step.lineLayer); }
-            currentStepIndex++;
-            nextStepReady = true;
-        }
-      }
-    } else {
-      // Route finished
-      document.getElementById("ai-tip").textContent = "Destination reached ✅";
-      // Clear distance display for finished route
-      const distanceEl = document.getElementById(`route-distance-${route.routeIndex}`);
-      if (distanceEl) {
-        distanceEl.textContent = `0.0 km remaining`;
-      }
-        
-      if ("speechSynthesis" in window)
-        speechSynthesis.speak(new SpeechSynthesisUtterance("Destination reached"));
-      activeRouteIndex = null;
-      currentStepIndex = 0;
-      nextStepReady = true;
-    }
-  }
-
-  // Apply dynamic eco hints even without route
-  updateDriverBehavior(currentSpeed, eco);
-
-  // Dashboard updates
-  document.getElementById("speed").textContent = eco.speed + " km/h";
-  document.getElementById("gear").textContent = eco.gear;
-  document.getElementById("throttle").textContent = eco.throttle + "%";
+  // Dashboard updates
+  document.getElementById("speed").textContent = eco.speed + " km/h";
+  document.getElementById("gear").textContent = eco.gear;
+  document.getElementById("throttle").textContent = eco.throttle + "%";
 }
-/* ===== GPS speed and idle detection (Unchanged) ===== */
+
+/* ===== GPS speed and idle detection ===== */
 let lastLatLng=null, lastGPSPos=null, lastGPSTime=null, idleStart=null;
 const IDLE_THRESHOLD=3, IDLE_TIME=60;
 function checkIdle(latlng){
-    if(!lastLatLng){ lastLatLng=latlng; idleStart=Date.now(); return false; }
-    const dist=latlng.distanceTo(lastLatLng);
-    if(dist<IDLE_THRESHOLD){ if(!idleStart) idleStart=Date.now(); return (Date.now()-idleStart)/1000 >= IDLE_TIME; }
-    lastLatLng=latlng; idleStart=null; return false;
+    if(!lastLatLng){ lastLatLng=latlng; idleStart=Date.now(); return false; }
+    const dist=latlng.distanceTo(lastLatLng);
+    if(dist<IDLE_THRESHOLD){ if(!idleStart) idleStart=Date.now(); return (Date.now()-idleStart)/1000 >= IDLE_TIME; }
+    lastLatLng=latlng; idleStart=null; return false;
 }
 
 function calculateGPSSpeed(latlng){
-    const now=Date.now();
-    if(lastGPSPos && lastGPSTime){
-        const dist=latlng.distanceTo(lastGPSPos);
-        const dt=(now-lastGPSTime)/1000;
-        lastGPSPos=latlng; lastGPSTime=now;
-        return (dist/dt)*3.6;
-    }else{ lastGPSPos=latlng; lastGPSTime=now; return 0; }
+    const now=Date.now();
+    if(lastGPSPos && lastGPSTime){
+        const dist=latlng.distanceTo(lastGPSPos);
+        const dt=(now-lastGPSTime)/1000;
+        lastGPSPos=latlng; lastGPSTime=now;
+        return (dist/dt)*3.6;
+    }else{ lastGPSPos=latlng; lastGPSTime=now; return 0; }
 }
 
-/* ===== Predict multi-step elevation ahead (Unchanged) ===== */
-const ELEVATION_INTERVAL=50; 
-const LOOKAHEAD_DISTANCE=400; 
+/* ===== Predict multi-step elevation ahead ===== */
+const ELEVATION_INTERVAL=50; 
+const LOOKAHEAD_DISTANCE=400; 
 let recentElevations=[];
 async function predictElevationAhead(latlng,heading){
-    const R=6378137; 
-    const pointsAhead=[];
-    for(let d=ELEVATION_INTERVAL; d<=LOOKAHEAD_DISTANCE; d+=ELEVATION_INTERVAL){
-        const latRad=latlng.lat*Math.PI/180, lonRad=latlng.lng*Math.PI/180;
-        const newLat=latRad+(d*Math.cos(heading*Math.PI/180))/R;
-        const newLng=lonRad+(d*Math.sin(heading*Math.PI/180))/(R*Math.cos(latRad));
-        pointsAhead.push({lat:newLat*180/Math.PI,lng:newLng*180/Math.PI});
-    }
-    const elevs=await getElevations(pointsAhead);
-    recentElevations=elevs;
-    const diffs=elevs.map((v,i)=>i===0?0:v-elevs[i-1]);
-    const avgSlope=diffs.reduce((a,b)=>a+b,0)/diffs.length;
-    return {elevs, slope:avgSlope};
+    const R=6378137; 
+    const pointsAhead=[];
+    for(let d=ELEVATION_INTERVAL; d<=LOOKAHEAD_DISTANCE; d+=ELEVATION_INTERVAL){
+        const latRad=latlng.lat*Math.PI/180, lonRad=latlng.lng*Math.PI/180;
+        const newLat=latRad+(d*Math.cos(heading*Math.PI/180))/R;
+        const newLng=lonRad+(d*Math.sin(heading*Math.PI/180))/(R*Math.cos(latRad));
+        pointsAhead.push({lat:newLat*180/Math.PI,lng:newLng*180/Math.PI});
+    }
+    const elevs=await getElevations(pointsAhead);
+    recentElevations=elevs;
+    const diffs=elevs.map((v,i)=>i===0?0:v-elevs[i-1]);
+    const avgSlope=diffs.reduce((a,b)=>a+b,0)/diffs.length;
+    return {elevs, slope:avgSlope};
 }
 
-/* ===== GPS Watch (Unchanged) ===== */
+/* ===== GPS Watch ===== */
 if(navigator.geolocation){
-    navigator.geolocation.watchPosition(async pos=>{
-        const latlng=L.latLng(pos.coords.latitude,pos.coords.longitude);
-        const heading=pos.coords.heading||0;
-        if(!waypoints.length) waypoints.push(latlng); else waypoints[0]=latlng;
-        if(!userMarker){ userMarker=L.marker(latlng,{icon:carIcon}).addTo(map); map.setView(latlng,14); }
-        else userMarker.setLatLng(latlng);
-        await adaptiveAIDashboard(latlng,heading);
-        checkOffRoute(latlng);
-    },()=>console.warn("GPS unavailable"),{enableHighAccuracy:true});
+    navigator.geolocation.watchPosition(async pos=>{
+        const latlng=L.latLng(pos.coords.latitude,pos.coords.longitude);
+        const heading=pos.coords.heading||0;
+        if(!waypoints.length) waypoints.push(latlng); else waypoints[0]=latlng;
+        if(!userMarker){ userMarker=L.marker(latlng,{icon:carIcon}).addTo(map); map.setView(latlng,14); }
+        else userMarker.setLatLng(latlng);
+        await adaptiveAIDashboard(latlng,heading);
+        checkOffRoute(latlng);
+    },()=>console.warn("GPS unavailable"),{enableHighAccuracy:true});
 }
 
-/* ===== Off-route adaptation (Unchanged) ===== */
+/* ===== Off-route adaptation ===== */
 async function checkOffRoute(latlng){
-    if(routes.length){
-        const nearestRoute=routes[0];
-        let minDist=Infinity;
-        nearestRoute.steps.forEach(s=>{ const d=latlng.distanceTo([s.lat,s.lng]); if(d<minDist) minDist=d; });
-        if(minDist>30){
-            console.log("Off-route detected — recalculating");
-            if(waypoints.length>=1){
-                const lastWaypoint=waypoints[waypoints.length-1];
-                createRoute(latlng,lastWaypoint,colors[routes.length%colors.length]);
-            }
-        }
-    }
+    if(routes.length){
+        const nearestRoute=routes[0];
+        let minDist=Infinity;
+        nearestRoute.steps.forEach(s=>{ const d=latlng.distanceTo([s.lat,s.lng]); if(d<minDist) minDist=d; });
+        if(minDist>30){
+            console.log("Off-route detected — recalculating");
+            if(waypoints.length>=1){
+                const lastWaypoint=waypoints[waypoints.length-1];
+                createRoute(latlng,lastWaypoint,colors[routes.length%colors.length]);
+            }
+        }
+    }
 }
 
-/* ===== Route creation & step-box integration (Unchanged logic) ===== */
+/* ===== Route creation & step-box integration ===== */
 async function createRoute(start, end, color, marker = null, index = null) {
-    // Determine the 0-based index for the internal array and 1-based index for display/ID
-    const routeIndex = index !== null ? index : routes.length; 
-    const displayIndex = index !== null ? index : routes.length + 1; 
+    // Check for duplicate destination
+    const endKey = `${end.lat.toFixed(6)},${end.lng.toFixed(6)}`;
+    const existing = routes.find(r => r.endKey === endKey);
+    if (existing) return; // Skip creating duplicate route box
+    const routeIndex = index !== null ? index : routes.length + 1;
+    const routeColor = color || colors[(routeIndex - 1) % colors.length];
+    const rc = L.Routing.control({
+        waypoints: [start, end],
+        router: L.Routing.osrmv1({ serviceUrl: 'https://router.project-osrm.org/route/v1' }),
+        show: false, addWaypoints: false, createMarker: () => null,
+        lineOptions: { styles: [{ color: routeColor, weight: 5, opacity: 0.9 }] }
+    }).addTo(map);
+    const group = L.layerGroup().addTo(map);
 
-    // Check for duplicate destination
-    const endKey = `${end.lat.toFixed(6)},${end.lng.toFixed(6)}`;
-    const existing = routes.find(r => r.endKey === endKey);
-    if (existing) return; // Skip creating duplicate route box
-    const routeColor = color || colors[(routeIndex) % colors.length];
+    // Route box
+    const box = document.createElement('div'); box.className = 'route-box';
+    const header = document.createElement('div'); header.className = 'route-header';
+    header.style.background = routeColor;
+    header.innerHTML = `<b>Route ${routeIndex}</b>
+        <button style="background:#ff4c4c;border:none;color:#fff;border-radius:50%;width:22px;height:22px;">✕</button>`;
+    const content = document.createElement('div'); content.className = 'route-content';
+    content.style.display = 'block'; box.appendChild(header); box.appendChild(content);
+    document.getElementById('routePanel').appendChild(box);
+    header.onclick = () => content.style.display = content.style.display === 'block' ? 'none' : 'block';
+    header.querySelector('button').onclick = (e) => {
+        e.stopPropagation();
+        map.removeControl(rc); map.removeLayer(group); box.remove();
+        const idx = routes.findIndex(r => r.rc === rc); 
+        if (idx !== -1) {
+            // If active route deleted, reset tip box
+            if (activeRouteIndex === idx) {
+                document.getElementById('ai-tip').textContent = 'Drive smoothly';
+                activeRouteIndex = null;
+                currentStepIndex = 0;
+            }
+            routes.splice(idx, 1);
+        }
+        if (marker) {
+            const wpIdx = waypointMarkers.indexOf(marker);  
+            if (wpIdx !== -1) { map.removeLayer(marker); waypointMarkers.splice(wpIdx, 1); waypoints.splice(wpIdx + 1, 1); }
+        }
+        rebuildRoutes();
+    };
 
-    const rc = L.Routing.control({
-        waypoints: [start, end],
-        router: L.Routing.osrmv1({ serviceUrl: 'https://router.project-osrm.org/route/v1' }),
-        show: false, addWaypoints: false, createMarker: () => null,
-        lineOptions: { styles: [{ color: routeColor, weight: 5, opacity: 0.9 }] }
-    }).addTo(map);
-    const group = L.layerGroup().addTo(map);
-
-    // Route box
-    const box = document.createElement('div'); box.className = 'route-box';
-    const header = document.createElement('div'); header.className = 'route-header';
-    header.style.background = routeColor;
-    // --- NEW: Include a span for total distance in the header with the routeIndex as ID ---
-    header.innerHTML = `<b>Route ${displayIndex}</b> <span id="route-distance-${routeIndex}" style="font-weight:normal;">Calculating...</span>
-        <button style="background:#ff4c4c;border:none;color:#fff;border-radius:50%;width:22px;height:22px;">✕</button>`;
-    // --- END NEW ---
-    const content = document.createElement('div'); content.className = 'route-content';
-    content.style.display = 'block'; box.appendChild(header); box.appendChild(content);
-    document.getElementById('routePanel').appendChild(box);
-    header.onclick = () => content.style.display = content.style.display === 'block' ? 'none' : 'block';
-    header.querySelector('button').onclick = (e) => {
-        e.stopPropagation();
-        map.removeControl(rc); map.removeLayer(group); box.remove();
-        const idx = routes.findIndex(r => r.rc === rc); 
-        if (idx !== -1) {
-            // If active route deleted, reset tip box
-            if (activeRouteIndex === idx) {
-                document.getElementById('ai-tip').textContent = 'Drive smoothly';
-                activeRouteIndex = null;
-                currentStepIndex = 0;
-            }
-            routes.splice(idx, 1);
-        }
-        if (marker) {
-            const wpIdx = waypointMarkers.indexOf(marker);  
-            if (wpIdx !== -1) { map.removeLayer(marker); waypointMarkers.splice(wpIdx, 1); waypoints.splice(wpIdx + 1, 1); }
-        }
-        rebuildRoutes();
-    };
-
-    rc.on('routesfound', async e => {
-        const route = e.routes[0];
-        const coords = route.coordinates.map(c => ({ lat: c.lat, lng: c.lng }));
-        const elevs = await getElevations(coords);
-        const steps = [];
-        content.innerHTML = '';
-        route.instructions.forEach((s, j) => {
-            const idxStart = s.index;
-            const idxEnd = j + 1 < route.instructions.length ? route.instructions[j + 1].index : coords.length;
-            const segmentCoords = coords.slice(idxStart, idxEnd).map(c => [c.lat, c.lng]);
-            const elev = elevs[idxStart] || 0;
-            const stepLine = L.polyline(segmentCoords, { color: routeColor, weight: 5, opacity: 0.5 }).addTo(group);
-            const eco = ecoAdvisor(s.distance, elev, s.text);
-            const item = document.createElement('div');
-            item.className = 'route-step';
-            item.innerHTML = `<b>${s.text}</b><div>${(s.distance / 1000).toFixed(2)} km | Elev ${elev.toFixed(1)} m`;
-            content.appendChild(item);
-            item.addEventListener('mouseenter', () => stepLine.setStyle({ color: '#00FF00', weight: 6, opacity: 0.9 }));
-            item.addEventListener('mouseleave', () => stepLine.setStyle({ color: routeColor, weight: 5, opacity: 0.5 }));
-            // --- UPDATED: Store distance, element, and lineLayer ---
-            steps.push({ 
-                lat: coords[idxStart].lat, 
-                lng: coords[idxStart].lng, 
-                text: s.text, 
-                elev, 
-                element: item, // DOM element for removal
-                distance: s.distance, // Distance for remaining distance calc
-                lineLayer: stepLine // Leaflet layer for removal
-            });
-            // --- END UPDATED ---
-        });
-        // --- NEW: Store total distance and index, and update initial display ---
-        const totalRouteDistance = route.summary.totalDistance;
-        routes.push({ rc, group, steps, color: routeColor, endKey, totalDistance: totalRouteDistance, routeIndex: routeIndex });
-        document.getElementById(`route-distance-${routeIndex}`).textContent = `${(totalRouteDistance / 1000).toFixed(1)} km total`;
-        // --- END NEW ---
-
-        // Only set as active route if no other route is in progress
-        if (activeRouteIndex === null) {
-            activeRouteIndex = routeIndex;
-            currentStepIndex = 0;
-            speakCurrentStep(); // Speak the first step immediately
-        }
-    });
+    rc.on('routesfound', async e => {
+        const route = e.routes[0];
+        const coords = route.coordinates.map(c => ({ lat: c.lat, lng: c.lng }));
+        const elevs = await getElevations(coords);
+        const steps = [];
+        content.innerHTML = '';
+        route.instructions.forEach((s, j) => {
+            const idxStart = s.index;
+            const idxEnd = j + 1 < route.instructions.length ? route.instructions[j + 1].index : coords.length;
+            const segmentCoords = coords.slice(idxStart, idxEnd).map(c => [c.lat, c.lng]);
+            const elev = elevs[idxStart] || 0;
+            const stepLine = L.polyline(segmentCoords, { color: routeColor, weight: 5, opacity: 0.5 }).addTo(group);
+            const eco = ecoAdvisor(s.distance, elev, s.text);
+            const item = document.createElement('div');
+            item.innerHTML = `<b>${s.text}</b><div>${(s.distance / 1000).toFixed(2)} km | Elev ${elev.toFixed(1)} m | Speed ${eco.speed}</div>`;
+            content.appendChild(item);
+            item.addEventListener('mouseenter', () => stepLine.setStyle({ color: '#00FF00', weight: 6, opacity: 0.9 }));
+            item.addEventListener('mouseleave', () => stepLine.setStyle({ color: routeColor, weight: 5, opacity: 0.5 }));
+            steps.push({ lat: coords[idxStart].lat, lng: coords[idxStart].lng, text: s.text, elev, element: item });
+        });
+        routes.push({ rc, group, steps, color: routeColor, endKey });
+        // Only set as active route if no other route is in progress
+        if (activeRouteIndex === null) {
+            activeRouteIndex = routes.length - 1;
+            currentStepIndex = 0;
+            speakCurrentStep(); // Speak the first step immediately
+        }
+    });
 }
 
-
-/*================Multi-step AI Tip Blending + Voice (FIXED)=============*/
+/*================Multi-step AI Tip Blending + Voice=============*/
 function speakCurrentStep() {
-  if (activeRouteIndex === null) return;
-  const route = routes[activeRouteIndex];
-  const step = route.steps[0];
-  if (!step || step.spoken) return;
+  if (activeRouteIndex === null) return;
+  const route = routes[activeRouteIndex];
+  const step = route.steps[0];
+  if (!step || step.spoken) return;
 
-  const eco = ecoAdvisor(step.distance, step.elev, step.text);
-  const stepDistance = step.distance < 1000 ? `${step.distance.toFixed(0)} meters` : `${(step.distance / 1000).toFixed(1)} kilometers`;
-
-  // 1. Speak Step Instruction and Distance
-  const stepMsg = new SpeechSynthesisUtterance(
-    `Starting route. Step 1: ${step.text}. Proceed for ${stepDistance}`
-  );
-  stepMsg.rate = 1; stepMsg.pitch = 1;
-  
-  // 2. Speak Eco Tip after step instruction
-  const ecoMsg = new SpeechSynthesisUtterance(
-    `Eco Tip: ${eco.tip}`
-  );
-  ecoMsg.rate = 1; ecoMsg.pitch = 1;
-
-  if ("speechSynthesis" in window) {
-    // Chain the messages
-    stepMsg.onend = () => {
-      // Update tip box to Eco Tip after step instruction finishes
-      document.getElementById("ai-tip").textContent = `Tip: ${eco.tip}`; 
-      speechSynthesis.speak(ecoMsg);
-    };
-    
-    ecoMsg.onend = () => {
-      step.spoken = true;
-    };
-
-    // Start the speech chain and update tip box to Step Instruction
-    document.getElementById("ai-tip").textContent = `Step 1: ${step.text}`; 
-    if (speechSynthesis.speaking) { speechSynthesis.cancel(); } // Ensure no old messages interfere
-    speechSynthesis.speak(stepMsg);
-  } else {
-    document.getElementById("ai-tip").textContent = `Tip: ${eco.tip}`;
-    step.spoken = true;
-  }
+  const eco = ecoAdvisor(step.distance, step.elev, step.text);
+  document.getElementById("ai-tip").textContent = `${eco.tip} — ${step.text}`;
+  if ("speechSynthesis" in window) {
+    const msg = new SpeechSynthesisUtterance(
+      `Starting route. Step 1: ${step.text}. Recommended speed ${eco.speed} kilometers per hour, gear ${eco.gear}. ${eco.tip}`
+    );
+    msg.rate = 1; msg.pitch = 1;
+    msg.onend = () => { step.spoken = true; };
+    speechSynthesis.speak(msg);
+  }
 }
 
-/* ===== Add waypoint on map click (Unchanged) ===== */
+/* ===== Add waypoint on map click ===== */
 map.on('click',e=>{
-    const latlng=e.latlng; waypoints.push(latlng);
-    const marker=L.marker(latlng).addTo(map); waypointMarkers.push(marker);
-    if(waypoints.length>=2) createRoute(waypoints[waypoints.length-2],latlng,colors[routes.length%colors.length],marker);
+    const latlng=e.latlng; waypoints.push(latlng);
+    const marker=L.marker(latlng).addTo(map); waypointMarkers.push(marker);
+    if(waypoints.length>=2) createRoute(waypoints[waypoints.length-2],latlng,colors[routes.length%colors.length],marker);
 });
 
-/* ===== Rebuild Routes (Unchanged) ===== */
+/* ===== Rebuild Routes ===== */
 function rebuildRoutes(){
-    routes.forEach(r=>{ map.removeControl(r.rc); map.removeLayer(r.group); });
-    routes=[]; document.getElementById('routePanel').innerHTML='';
-    if(waypoints.length<2) return;
-    for(let i=1;i<waypoints.length;i++){ createRoute(waypoints[i-1],waypoints[i],colors[(i-1)%colors.length],waypointMarkers[i-1],i); }
+    routes.forEach(r=>{ map.removeControl(r.rc); map.removeLayer(r.group); });
+    routes=[]; document.getElementById('routePanel').innerHTML='';
+    if(waypoints.length<2) return;
+    for(let i=1;i<waypoints.length;i++){ createRoute(waypoints[i-1],waypoints[i],colors[(i-1)%colors.length],waypointMarkers[i-1],i); }
 }
 
 
-/* ===== Map Toggle (MODIFIED to remove camera reference) ===== */
+/* ===== Map Toggle ===== */
 let mapFull=false;
 document.getElementById("map-toggle").addEventListener("click",()=>{
-  const mapContainer=document.querySelector(".map-container");
-  const button=document.getElementById("map-toggle");
-  if(!mapFull){
-    mapContainer.style.position="fixed"; mapContainer.style.top="0"; mapContainer.style.left="0"; mapContainer.style.width="100vw"; mapContainer.style.height="100vh"; mapContainer.style.zIndex="2000";
-    button.innerText="Restore Map"; mapFull=true; setTimeout(()=>map.invalidateSize(),300);
-  }else{
-    mapContainer.style.position=""; mapContainer.style.width=""; mapContainer.style.height=""; mapContainer.style.zIndex="";
-    button.innerText="Full Map"; mapFull=false; setTimeout(()=>map.invalidateSize(),300);
-  }
+  const mapContainer=document.querySelector(".map-container");
+  const camera=document.querySelector(".camera");
+  const button=document.getElementById("map-toggle");
+  if(!mapFull){
+    mapContainer.style.position="fixed"; mapContainer.style.top="0"; mapContainer.style.left="0"; mapContainer.style.width="100vw"; mapContainer.style.height="100vh"; mapContainer.style.zIndex="2000";
+    camera.style.display="none"; button.innerText="Restore Map"; mapFull=true; setTimeout(()=>map.invalidateSize(),300);
+  }else{
+    mapContainer.style.position=""; mapContainer.style.width=""; mapContainer.style.height=""; mapContainer.style.zIndex="";
+    camera.style.display="block"; button.innerText="Full Map"; mapFull=false; setTimeout(()=>map.invalidateSize(),300);
+  }
 });
 
-/* ===== Camera Toggle (REMOVED) ===== */
-
-/* ===== Search Suggestions (Unchanged) ===== */
+/* ===== Camera Toggle ===== */
+const camImg=document.getElementById("camera-feed");
+document.getElementById("enable-camera").onclick=()=>{ camImg.style.filter="none"; document.getElementById("enable-camera").style.display="none"; document.getElementById("disable-camera").style.display="block"; }
+document.getElementById("disable-camera").onclick=()=>{ camImg.style.filter="blur(12px) brightness(0.7)"; document.getElementById("enable-camera").style.display="block"; document.getElementById("disable-camera").style.display="none"; }
+/* ===== Search Suggestions ===== */
 const input=document.getElementById('searchInput');
 const suggestBox=document.getElementById('suggestBox');
 let results=[];
 input.oninput=async()=>{
-  const q=input.value.trim();
-  if(!q){suggestBox.style.display='none';return;}
-  const d=await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=12`)
-     .then(r=>r.json()).catch(()=>({features:[]}));
-  results=d.features||[];
-  suggestBox.innerHTML='';
-  results.forEach((f,i)=>{
-    const p=f.properties||{},name=p.name||p.city||'Unknown';
-    const info=[p.state,p.country].filter(Boolean).join(', ');
-    const div=document.createElement('div');
-    div.className='suggest-item';
-    div.innerHTML=`<b>${name}</b><div style="font-size:12px;color:#bbb;">${info}</div>`;
-    div.onclick=()=>selectResult(i);
-    suggestBox.appendChild(div);
-  });
-  suggestBox.style.display=results.length?'block':'none';
+  const q=input.value.trim();
+  if(!q){suggestBox.style.display='none';return;}
+  const d=await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=12`)
+     .then(r=>r.json()).catch(()=>({features:[]}));
+  results=d.features||[];
+  suggestBox.innerHTML='';
+  results.forEach((f,i)=>{
+    const p=f.properties||{},name=p.name||p.city||'Unknown';
+    const info=[p.state,p.country].filter(Boolean).join(', ');
+    const div=document.createElement('div');
+    div.className='suggest-item';
+    div.innerHTML=`<b>${name}</b><div style="font-size:12px;color:#bbb;">${info}</div>`;
+    div.onclick=()=>selectResult(i);
+    suggestBox.appendChild(div);
+  });
+  suggestBox.style.display=results.length?'block':'none';
 };
 document.addEventListener('click',e=>{
-  if(!suggestBox.contains(e.target)&&e.target!==input)suggestBox.style.display='none';
+  if(!suggestBox.contains(e.target)&&e.target!==input)suggestBox.style.display='none';
 });
 function selectResult(i){
-  const f=results[i]; if(!f)return;
-  const [lng,lat]=f.geometry.coordinates; const latlng=L.latLng(lat,lng);
-  waypoints.push(latlng);
-  const marker=L.marker(latlng).addTo(map);
-  waypointMarkers.push(marker);
-  if(waypoints.length>=2) createRoute(waypoints[waypoints.length-2],latlng,colors[routes.length%colors.length]);
-  input.value=''; suggestBox.style.display='none';
+  const f=results[i]; if(!f)return;
+  const [lng,lat]=f.geometry.coordinates; const latlng=L.latLng(lat,lng);
+  waypoints.push(latlng);
+  const marker=L.marker(latlng).addTo(map);
+  waypointMarkers.push(marker);
+  if(waypoints.length>=2) createRoute(waypoints[waypoints.length-2],latlng,colors[routes.length%colors.length]);
+  input.value=''; suggestBox.style.display='none';
 }
 
-/* ===== Voice Search (Mic Button) (Unchanged) ===== */
+/* ===== Voice Search (Mic Button) ===== */
+/* ===== Voice Search (Mic Button) ===== */
 const micBtn = document.getElementById('micBtn');
 
 micBtn.onclick = async () => {
-  if (!('webkitSpeechRecognition' in window)) {
-    alert('Speech Recognition not supported on this browser');
-    return;
-  }
+  if (!('webkitSpeechRecognition' in window)) {
+    alert('Speech Recognition not supported on this browser');
+    return;
+  }
 
-  try {
-    // ✅ Ask for microphone permission explicitly (like location)
-    await navigator.mediaDevices.getUserMedia({ audio: true });
+  try {
+    // ✅ Ask for microphone permission explicitly (like location)
+    await navigator.mediaDevices.getUserMedia({ audio: true });
 
-    const recog = new webkitSpeechRecognition();
-    recog.lang = 'en-US';
-    recog.interimResults = false;
-    recog.maxAlternatives = 1;
+    const recog = new webkitSpeechRecognition();
+    recog.lang = 'en-US';
+    recog.interimResults = false;
+    recog.maxAlternatives = 1;
 
-    micBtn.textContent = '🎙️ Listening...';
-    recog.start();
+    micBtn.textContent = '🎙️ Listening...';
+    recog.start();
 
-    recog.onresult = (e) => {
-      const text = e.results[0][0].transcript;
-      input.value = text;
-      input.dispatchEvent(new Event('input'));
-    };
+    recog.onresult = (e) => {
+      const text = e.results[0][0].transcript;
+      input.value = text;
+      input.dispatchEvent(new Event('input'));
+    };
 
-    recog.onerror = (err) => {
-      console.warn('Speech recognition error:', err);
-      micBtn.textContent = '🎤';
-    };
+    recog.onerror = (err) => {
+      console.warn('Speech recognition error:', err);
+      micBtn.textContent = '🎤';
+    };
 
-    recog.onend = () => {
-      micBtn.textContent = '🎤';
-    };
+    recog.onend = () => {
+      micBtn.textContent = '🎤';
+    };
 
-  } catch (err) {
-    // 🚫 Permission denied or mic unavailable
-    console.error('Microphone access denied:', err);
-    alert('Please allow microphone permission to use voice search.');
-  }
+  } catch (err) {
+    // 🚫 Permission denied or mic unavailable
+    console.error('Microphone access denied:', err);
+    alert('Please allow microphone permission to use voice search.');
+  }
 };
 
 </script>
 </body>
-</html>
+</html> 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Eco Driving Dashboard</title>
+<title>TJL - Location-Based Navigation</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css"/>
 <style>
@@ -34,10 +34,44 @@ box-shadow:0 0.3vh 1vh rgba(0,0,0,0.4);}
 border:none;outline:none;}
 #micBtn{background:#ff4c4c;color:#fff;border:none;border-radius:1vh;padding:0.8vh 1.2vw;
 font-weight:bold;cursor:pointer;box-shadow:0 0.4vh 1vh rgba(0,0,0,0.3);}
-#suggestBox{position:absolute;top:100%;left:10%;width:80%;background:rgba(0,0,0,0.9);
-border-radius:1vh;max-height:40vh;overflow-y:auto;z-index:2000;display:none;}
-.suggest-item{padding:0.8vh 1vw;border-bottom:1px solid rgba(255,255,255,0.1);cursor:pointer;}
-.suggest-item:hover{background:rgba(255,255,255,0.1);}
+/* === Suggestion Box Modern UI === */
+#suggestBox {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90%;
+  background: rgba(22, 26, 38, 0.96);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  backdrop-filter: blur(8px);
+  z-index: 2000;
+  overflow: hidden;
+  display: none;
+}
+
+.suggest-item {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  transition: background 0.25s ease, transform 0.1s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.suggest-item:last-child { border-bottom: none; }
+.suggest-item:hover {
+  background: rgba(255,255,255,0.08);
+  transform: scale(1.02);
+}
+.suggest-item b {
+  color: #ffcc00;
+  font-size: 1rem;
+}
+.suggest-item .subtext {
+  color: #bbb;
+  font-size: 0.8rem;
+}
 /* === MAIN (Map now fills space) === */
 .main-section{flex:1;display:flex;flex-direction:column;gap:1vh;padding:0 2vw 1vh;}
 .map-container{flex:1;position:relative;border-radius:1vh;overflow:hidden;
@@ -64,8 +98,7 @@ border:1px solid rgba(255,255,255,0.2);box-shadow:0 0.5vh 1vh rgba(0,0,0,0.4);}
   align-items: center;
   transition: transform 0.2s ease, background 0.3s ease;
 }
-#locate-btn:hover {background: #4682b4;transform: scale(1.1);
-}
+#locate-btn:hover {background: #4682b4;transform: scale(1.1);}
 #map-toggle{position:absolute;top:1vh;right:1vh;z-index:1000;background:#ff8c00;
 border:none;border-radius:1vh;padding:0.5vh 1vw;font-weight:bold;cursor:pointer;color:#000;}
 /* === ROUTE PANEL === */
@@ -75,10 +108,13 @@ overflow-y:auto;background:rgba(0,0,0,0.6);border-radius:1vh;padding:0.5vh;color
 .route-header{padding:0.6vh 0.6vw;font-weight:bold;display:flex;justify-content:space-between;
 align-items:center;color:#fff;font-size:0.9rem;}
 .route-content{background:rgba(255,255,255,0.1);padding:0.4vh 0.6vw;font-size:0.85rem;max-height:30vh;overflow-y:auto;transition:all 0.3s ease;}
-.route-step{padding:0.4vh 0.3vw;margin-bottom:0.4vh;border-bottom:1px solid rgba(255,255,255,0.1);}
+.route-step{padding:0.4vh 0.3vw;margin-bottom:0.4vh;border-bottom:1px solid rgba(255,255,255,0.1);transition:all 0.3s ease;}
 .route-step:hover{background:rgba(255,255,255,0.15);}
+.route-step.completed{display:none;} /* 🆕 HIDE completed steps */
+.route-step.active{background:rgba(255,215,0,0.3);font-weight:bold;border-left:3px solid gold;}
+.route-step.upcoming{opacity:0.7;}
 
-/* Car Icon Style (Updated for Car) */
+/* Car Icon Style */
 .user-car-icon {
     width: 32px;
     height: 32px;
@@ -133,31 +169,64 @@ align-items:center;color:#fff;font-size:0.9rem;}
   font-size:0.78rem; padding:5px 8px; border-radius:8px;
   background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12);
 }
+/* === Map Popups (Improved visual design) === */
+.leaflet-popup-content-wrapper {
+  background: linear-gradient(180deg, rgba(28,34,48,0.98) 0%, rgba(18,22,32,0.95) 100%);
+  color: #fff;
+  border-radius: 14px;
+  border: 2px solid rgba(255,215,0,0.25);
+  box-shadow: 0 0 18px rgba(0,0,0,0.7), inset 0 0 6px rgba(255,255,255,0.05);
+  padding: 8px 10px;
+  font-size: 0.9rem;
+  line-height: 1.3;
+}
+.leaflet-popup-content b {
+  color: #ffb400;
+  font-weight: 700;
+  text-shadow: 0 0 6px rgba(255,200,0,0.3);
+}
+.leaflet-popup-tip {
+  background: rgba(25,30,45,0.95);
+  box-shadow: 0 0 10px rgba(0,0,0,0.4);
+  border: 1px solid rgba(255,255,255,0.15);
+}
+.leaflet-popup-content-wrapper:before {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  right: 1px;
+  bottom: 1px;
+  border-radius: 12px;
+  border: 1px solid rgba(192, 85, 85, 0.08);
+  pointer-events: none;
+}
 
 </style>
 </head>
 <body>
 <div class="ai-tip-box" id="ai-tip">Starting system...</div>
 <div class="stats-row">
-  <div class="stat-card speed-box"><div class="stat-label">Speed</div><div class="stat-value" id="speed">0 km/h</div></div>
-  <div class="stat-card gear-box"><div class="stat-label">Gear</div><div class="stat-value" id="gear">N</div></div>
-  <div class="stat-card throttle-box"><div class="stat-label">Throttle</div><div class="stat-value" id="throttle">0%</div></div>
+  <div class="stat-card speed-box"><div class="stat-label">Speed</div><div class="stat-value" id="speed">0 km/h</div></div>
+  <div class="stat-card gear-box"><div class="stat-label">Gear</div><div class="stat-value" id="gear">N</div></div>
+  <div class="stat-card throttle-box"><div class="stat-label">Throttle</div><div class="stat-value" id="throttle">0%</div></div>
+  <div class="stat-card" style="background:#d9534f;"><div class="stat-label">Speed Limit</div><div class="stat-value" id="speedLimit">-- km/h</div>
+</div>
+
 </div>
 
 <div class="search-row">
-  <input type="text" id="searchInput" placeholder="Search destination...">
-  <button id="micBtn">🎤</button>
-  <div id="suggestBox"></div>
+  <input type="text" id="searchInput" placeholder="Search destination...">
+  <button id="micBtn">🎤</button>
+  <div id="suggestBox"></div>
 </div>
 
 <div class="main-section">
-  <div class="map-container">
-    <div id="map" class="map"></div>
-    <button id="map-toggle">Full Map</button>
-      <!-- 🆕 Locate Me (Target) Button -->
+  <div class="map-container">
+    <div id="map" class="map"></div>
+    <button id="map-toggle">Full Map</button>
     <button id="locate-btn" title="Recenter to my location">🎯</button>
-    <div id="routePanel"></div>
-    <!-- Route Approval Panel (hidden by default) -->
+    <div id="routePanel"></div>
     <div id="approvalPanel" aria-live="polite">
       <div class="approval-row">
         <div class="approval-icon">📍</div>
@@ -175,15 +244,16 @@ align-items:center;color:#fff;font-size:0.9rem;}
         <button id="approvalStart"  class="btn-solid">Start</button>
       </div>
     </div>
-  </div>
-</div> <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  </div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
 <script>
 // ==============================
-// PRIORITY LOGIC: WARNING > STEP > ECO
+// LOCATION-FIRST NAVIGATION SYSTEM
+// Priority: Driver's actual location > Pre-planned announcements
 // ==============================
 
-// ===== Map rotation =====
 let currentMapRotation = 0;
 function rotateMap(angle) {
   currentMapRotation = angle;
@@ -196,11 +266,9 @@ function rotateMap(angle) {
   if (controlPane) controlPane.style.transform = `rotate(${-angle}deg)`;
 }
 
-// ===== Map init =====
 const map = L.map('map').setView([0, 0], 2);
 let autoFollow = true;
 
-// ===== Base layers =====
 const englishMap = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
   attribution: '&copy; OpenStreetMap contributors | © CartoDB',
   subdomains: 'abcd', maxZoom: 19
@@ -217,57 +285,53 @@ L.control.layers(
   null, { position: "topright", collapsed: true }
 ).addTo(map);
 
-// ===== Car icon =====
 const carIcon = L.divIcon({
   className: 'user-car-icon',
   html: '<svg id="user-car-svg" class="user-car-svg" width="32" height="32" viewBox="0 0 100 100" fill="#2a3b60" stroke="#fff" stroke-width="3"><path d="M 25 20 L 75 20 L 80 45 L 90 45 L 90 70 L 10 70 L 10 45 L 20 45 Z" /></svg>',
   iconSize: [32,32], iconAnchor: [16,16]
 });
 
-// ===== State =====
 let userMarker = null, waypoints = [], waypointMarkers = [], routes = [];
 const colors = ['#FF6B6B','#4DA6FF','#FFD93D','#6BCB77','#FF8C00','#9B59B6','#00BFA5'];
 
 let activeRouteIndex = null;
 let currentStepIndex = 0;
-let nextStepReady = true;
 let ECO_START_BLOCK = Date.now() + 3000;
 let currentRoadType = "city";
 let lastSlope = 0;
+
+// 🆕 Track which steps have been announced to avoid repeating
+let announcedSteps = new Set();
 
 const UI = {
   aiBox: document.getElementById("ai-tip"),
   speedEl: document.getElementById("speed"),
   gearEl: document.getElementById("gear"),
   throttleEl: document.getElementById("throttle"),
+  speedLimitEl: document.getElementById("speedLimit")
 };
 
-// ===== Priority speech + display controller =====
 const SPEECH = {
-  // cooldowns (ms)
-  ECO_COOLDOWN: 20000, // 20s
-  ECO_PERIODIC: 35000, // 35s
-  STEP_REMINDER: 20000,  // optional reminder if long segments
-  WARNING_HOLD: 3500,    // keep warning visible for a bit
+  ECO_COOLDOWN: 20000,
+  ECO_PERIODIC: 35000,
+  STEP_REMINDER: 20000,
+  WARNING_HOLD: 3500,
+  LOOKAHEAD_DISTANCE: 150, // 🆕 Reduced from 300m - announce when 150m away
+  STEP_ARRIVAL_THRESHOLD: 30, // 🆕 Consider "arrived" when within 30m
 
-  // state
   lastEcoText: "",
   lastEcoSpokenAt: 0,
-  lastEcoShownAt: 0,
   lastRoadType: "",
-  lastSlopeBucket: "flat", // "uphill" | "downhill" | "flat"
-
+  lastSlopeBucket: "flat",
   lastStepText: "",
   lastStepSpokenAt: 0,
-
   warningActiveUntil: 0,
-  currentDisplay: { kind: "eco", text: "" }, // "warning" | "step" | "eco"
+  currentDisplay: { kind: "eco", text: "" },
 };
 
 function nowMs() { return Date.now(); }
 
 function aiBoxShow(kind, text) {
-  // Respect priority when setting text
   SPEECH.currentDisplay = { kind, text };
   if (kind === "warning") UI.aiBox.textContent = "⚠️ " + text;
   else if (kind === "step") UI.aiBox.textContent = "🧭 " + text;
@@ -280,7 +344,6 @@ function speak(text, kind, { interrupt=false } = {}) {
   u.rate = 1; u.pitch = 1;
   speechSynthesis.speak(u);
 
-  // update last-spoken timestamps
   if (kind === "warning") {
     SPEECH.warningActiveUntil = nowMs() + SPEECH.WARNING_HOLD;
     aiBoxShow("warning", text);
@@ -299,22 +362,16 @@ function speak(text, kind, { interrupt=false } = {}) {
   }
 }
 
-// Simple priority updater: call after any event
 function refreshAIBox() {
-    const t = nowMs();
-
-    if (t < SPEECH.warningActiveUntil) return;
-    // Step active within reminder window → show step
-    if (SPEECH.lastStepText && (t - SPEECH.lastStepSpokenAt) < SPEECH.STEP_REMINDER) {
-        aiBoxShow("step", SPEECH.lastStepText);
-    } else {
-        aiBoxShow("eco", SPEECH.lastEcoText);
-    }
-    // Default → show eco
-    if (SPEECH.lastEcoText) aiBoxShow("eco", SPEECH.lastEcoText);
+  const t = nowMs();
+  if (t < SPEECH.warningActiveUntil) return;
+  if (SPEECH.lastStepText && (t - SPEECH.lastStepSpokenAt) < SPEECH.STEP_REMINDER) {
+    aiBoxShow("step", SPEECH.lastStepText);
+  } else {
+    aiBoxShow("eco", SPEECH.lastEcoText);
+  }
+  if (SPEECH.lastEcoText) aiBoxShow("eco", SPEECH.lastEcoText);
 }
-
-
 
 // ===== Preview / approval panel =====
 let preview = { active:false, group:null, polyline:null, osrmRoute:null, start:null, end:null, destLabel:"", tempMarker:null };
@@ -360,20 +417,42 @@ function buildPreviewRoute(startLL, endLL, labelText){
   });
 }
 
-function openPreviewTo(latlng, label, addTempMarker = true){
+async function openPreviewTo(latlng, label, addTempMarker = true) {
   const start = userMarker ? userMarker.getLatLng() : map.getCenter();
-  if (addTempMarker){
-    if (preview.tempMarker) { try { map.removeLayer(preview.tempMarker); } catch {} }
-    preview.tempMarker = L.marker(latlng).addTo(map);
+  // 🆕 Get human-readable address (reverse geocode)
+  let placeName = label;
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latlng.lat}&lon=${latlng.lng}`);
+    const data = await res.json();
+    if (data && data.display_name) placeName = data.display_name.split(",").slice(0, 3).join(", ");
+  } catch (err) {
+    console.warn("Reverse geocode failed:", err);
   }
-  buildPreviewRoute(start, latlng, label);
+  // 🆕 Add popup marker for destination
+  if (addTempMarker) {
+    if (preview.tempMarker) { try { map.removeLayer(preview.tempMarker); } catch {} }
+    preview.tempMarker = L.marker(latlng)
+      .bindPopup(`<b>Destination:</b><br>${placeName}`)
+      .addTo(map)
+      .openPopup();
+  }
+  // 🆕 Voice + tip confirmation
+  const destinationText = `Destination set to ${placeName}`;
+  speak(destinationText, "step", { interrupt: true });
+  aiBoxShow("step", destinationText);
+  buildPreviewRoute(start, latlng, placeName);
 }
 
 approvalStartBtn.addEventListener("click", () => {
   if (!preview.active || !preview.end) return;
   const start = userMarker ? userMarker.getLatLng() : map.getCenter();
   if (!waypoints.length) waypoints.push(start); else waypoints[0] = start;
-  const destMarker = L.marker(preview.end).addTo(map);
+  // 🆕 Add popup marker for confirmed destination
+  const destMarker = L.marker(preview.end)
+    .bindPopup(`<b>Destination Confirmed:</b><br>${preview.destLabel}`)
+    .addTo(map)
+    .openPopup();
+  // 🆕 Speak confirmation again once approved
   waypointMarkers.push(destMarker); waypoints.push(preview.end);
   const endLL = preview.end; clearPreview();
   createRoute(waypoints[waypoints.length - 2], endLL, colors[routes.length % colors.length], destMarker);
@@ -392,7 +471,6 @@ function calculateGPSSpeed(latlng){
 }
 
 async function getRoadType(latlng) {
-  // Simple classifier by speed
   const lastSp = calculateGPSSpeed(latlng);
   if (lastSp > 80) currentRoadType = "highway";
   else if (lastSp > 40) currentRoadType = "residential";
@@ -415,15 +493,21 @@ function ecoAdvisor(distAhead, slope){
   if (distAhead > 700 && Math.abs(slope) < 3) tip += " Long straight ahead.";
   return { speed, gear, throttle, tip, slope };
 }
+// ===== Elevation Fix + Directional Arrows + Turn Signals =====
+async function getElevations(coords) {
+  try {
+    const locations = coords.map(c => `${c.lat},${c.lng}`).join("|");
+    const res = await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${locations}`);
+    const data = await res.json();
+    return data.results.map(r => r.elevation || 0);
+  } catch (err) {
+    console.warn("Elevation fetch failed:", err);
+    return new Array(coords.length).fill(0);
+  }
+}
 
-// ===== Elevation lookahead (mock) =====
 const ELEVATION_INTERVAL = 50;
 const LOOKAHEAD_DISTANCE = 200;
-async function getElevations(coords){
-  try {
-    return new Array(coords.length).fill(0).map((_, i) => Math.sin(i * 0.1) * 50 + Math.random() * 5);
-  } catch { return new Array(coords.length).fill(0); }
-}
 async function predictElevationAhead(latlng, heading){
   const R=6378137; const pts=[];
   for(let d=ELEVATION_INTERVAL; d<=LOOKAHEAD_DISTANCE; d+=ELEVATION_INTERVAL){
@@ -444,8 +528,71 @@ function slopeBucket(slope){
   if (slope < -2.5) return "uphill";
   return "flat";
 }
+// ==========================================================
+// VIRTUAL GPS — USED WHEN USER REFUSES GPS PERMISSION
+// ==========================================================
 
-// ===== Eco: speak + show with change detection and periodic =====
+let useVirtualGPS = false;
+let virtualLatLng = null;
+
+// Override GPS update function
+function updateVirtualGPS(latlng) {
+  useVirtualGPS = true;
+  virtualLatLng = latlng;
+
+  // Feed dashboard with this fake location
+  adaptiveAIDashboard(latlng, 0);
+  updateSpeedLimit(latlng);
+}
+
+// Modify GPS watcher to detect permission denial
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition(
+    async pos => {
+      useVirtualGPS = false; // real GPS working
+      const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+      updateSpeedLimit(latlng);
+      adaptiveAIDashboard(latlng, pos.coords.heading || 0);
+
+      if (!userMarker) {
+        userMarker = L.marker(latlng, { icon: carIcon }).addTo(map);
+        map.setView(latlng, 18);
+      } else {
+        userMarker.setLatLng(latlng);
+      }
+    },
+    err => {
+      console.warn("GPS disabled, switching to virtual GPS.");
+      useVirtualGPS = true;
+    },
+    { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
+  );
+}
+
+// === Speed Limit (Overpass API) ============================================================================================================
+async function updateSpeedLimit(latlng) {
+  try {
+    const query = `
+      [out:json];
+      way(around:20, ${latlng.lat}, ${latlng.lng})["maxspeed"];
+      out tags;
+    `;
+    const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
+    const res = await fetch(url);
+    const json = await res.json();
+    let limit = "--";
+    if (json.elements && json.elements.length > 0) {
+      const tag = json.elements[0].tags.maxspeed;
+      if (tag) {
+        limit = tag.replace(" mph","");   // remove unwanted units
+      }
+    }
+    document.getElementById("speedLimit").textContent = limit + " km/h";
+  } catch (err) {
+    document.getElementById("speedLimit").textContent = "-- km/h";
+  }
+}
+
 function maybeSpeakEco(eco) {
   const t = nowMs();
   const bucket = slopeBucket(eco.slope);
@@ -454,40 +601,33 @@ function maybeSpeakEco(eco) {
   SPEECH.lastSlopeBucket = bucket;
   const periodicDue = (t - SPEECH.lastEcoSpokenAt) > SPEECH.ECO_PERIODIC;
   const tipText = `Road type: ${currentRoadType}. ${bucket === "uphill" ? "Uphill ahead." : bucket === "downhill" ? "Downhill ahead." : "Level road."} ` +
-                  `Recommended speed ${eco.speed} kilometers per hour.`;
+                  `Recommended ${eco.speed} kilometer per hour.`;
 
-  // Always update UI text when recomputed
   SPEECH.lastEcoText = tipText;
   SPEECH.lastRoadType = currentRoadType;
   SPEECH.lastSlopeBucket = bucket;
 
-  // Show eco immediately if nothing higher priority is active
   if (nowMs() >= SPEECH.warningActiveUntil && (!SPEECH.lastStepText || (t - SPEECH.lastStepSpokenAt) > SPEECH.STEP_REMINDER)) {
     aiBoxShow("eco", tipText);
   }
   const canSpeak = nowMs() > SPEECH.warningActiveUntil;
   const cooldownOk = (t - SPEECH.lastEcoSpokenAt) > SPEECH.ECO_PERIODIC;
-  // ✅ Don't allow eco to override a valid step
   if (activeRouteIndex !== null) {
-      // If recent step (<20s) → do NOT speak tip
-      if ((t - SPEECH.lastStepSpokenAt) < (SPEECH.STEP_REMINDER - 2000)) return;
+    if ((t - SPEECH.lastStepSpokenAt) < (SPEECH.STEP_REMINDER - 2000)) return;
   }
   if (canSpeak && cooldownOk && (roadChanged || slopeChanged || periodicDue)) {
-    // Do NOT interrupt step; wait if step just spoke
     speak(tipText, "eco", { interrupt:false });
   }
 }
 
-// ===== Driver behavior / warning =====
 let driverStats = { overspeed:0, totalPoints:0 };
 let spokeOverspeedOnce = false;
 
 function checkWarnings(currentSpeed, eco) {
   driverStats.totalPoints++;
-  const isOver = currentSpeed > (eco.speed + 10); // overspeed margin
+  const isOver = currentSpeed > (eco.speed + 10);
   if (isOver) {
     driverStats.overspeed++;
-    // speak immediately, interrupt everything
     const text = "Slow down. You are over the recommended speed.";
     speak(text, "warning", { interrupt:true });
     spokeOverspeedOnce = true;
@@ -496,67 +636,170 @@ function checkWarnings(currentSpeed, eco) {
   }
 }
 
-// ===== Step management =====
-function advanceStep() {
-  const route = routes[activeRouteIndex];
-  if (!route) return;
-  const step = route.steps[currentStepIndex];
-  if (step) {
-    // Fade current step
-    if (step.element) step.element.style.opacity = "0.4";
-    if (step.lineLayer) route.group.removeLayer(step.lineLayer);
-    if (step.connectorLine) route.group.removeLayer(step.connectorLine);
-  }
-  currentStepIndex++;
-  nextStepReady = true;
-
-  // If next step exists → speak it
-  if (currentStepIndex < route.steps.length) {
-    const nextStep = route.steps[currentStepIndex];
-    const distText =
-      nextStep.distance < 1000
-        ? `${nextStep.distance.toFixed(0)} meters`
-        : `${(nextStep.distance / 1000).toFixed(1)} kilometers`;
-    speak(`${nextStep.text}. Proceed for ${distText}.`, "step", { interrupt: true });
-  } else {
-    // Final destination
-    speak("Destination reached.", "step", { interrupt: true });
-    UI.aiBox.textContent = "Destination reached ✅";
-    try { map.removeControl(route.rc); } catch {}
-    try { map.removeLayer(route.group); } catch {}
-    const destIndex = waypointMarkers.length - 1;
-    if (waypointMarkers[destIndex]) {
-      map.removeLayer(waypointMarkers[destIndex]);
-      waypointMarkers.splice(destIndex, 1);
-      waypoints.splice(destIndex + 1, 1);
+// 🆕 Update UI to mark steps
+function updateStepUI(routeIndex, stepIndex, status) {
+  const route = routes.find(r => r.routeIndex === routeIndex);
+  if (!route || !route.steps[stepIndex]) return;
+  const step = route.steps[stepIndex];
+  if (step.element) {
+    step.element.classList.remove('completed', 'active', 'upcoming');
+    if (status === 'completed') {
+      step.element.classList.add('completed'); // Will be hidden by CSS
+    } else if (status === 'active') {
+      step.element.classList.add('active');
+    } else if (status === 'upcoming') {
+      step.element.classList.add('upcoming');
     }
-    const box = document.getElementById(`route-box-${route.routeIndex}`);
-    if (box) box.remove();
-    routes.splice(activeRouteIndex, 1);
-    activeRouteIndex = null;
-    currentStepIndex = 0;
-    nextStepReady = true;
-    SPEECH.lastStepText = "";
-    SPEECH.lastStepSpokenAt = 0;
-    SPEECH.currentDisplay.kind = "eco";
-    rebuildRoutes();
-    refreshAIBox();
   }
 }
 
-function speakCurrentStep() {
-  if (activeRouteIndex === null || !routes[activeRouteIndex]) return;
-  const route = routes[activeRouteIndex];
-  const step = route.steps[currentStepIndex];
-  if (!step) return;
-  const distText =
-    step.distance < 1000
-      ? `${step.distance.toFixed(0)} meters`
-      : `${(step.distance / 1000).toFixed(1)} kilometers`;
-  speak(`${step.text}. Proceed for ${distText}.`, "step", { interrupt: true });
+// 🆕 LOCATION-BASED STEP DETECTION
+// This function finds which step the driver is ACTUALLY at right now
+function findCurrentStepByLocation(latlng, route) {
+  if (!route || !route.steps || route.steps.length === 0) return null;
+  
+  const steps = route.steps;
+  let closestStepIndex = -1;
+  let closestDistance = Infinity;
+  
+  // Check all remaining steps (from currentStepIndex onwards)
+  for (let i = currentStepIndex; i < steps.length; i++) {
+    const stepLL = L.latLng(steps[i].lat, steps[i].lng);
+    const dist = latlng.distanceTo(stepLL);
+    
+    // If driver is within arrival threshold of this step
+    if (dist < SPEECH.STEP_ARRIVAL_THRESHOLD && dist < closestDistance) {
+      closestDistance = dist;
+      closestStepIndex = i;
+    }
+  }
+  
+  return closestStepIndex >= 0 ? { index: closestStepIndex, distance: closestDistance } : null;
 }
 
-// ===== Adaptive AI loop =====
+// 🆕 SMART STEP ADVANCEMENT
+// Handles skipping missed steps and announcing current location
+function smartStepAdvancement(latlng) {
+  if (activeRouteIndex === null || !routes[activeRouteIndex]) return;
+  
+  const route = routes[activeRouteIndex];
+  const steps = route.steps;
+  
+  // Find where driver actually is
+  const locationResult = findCurrentStepByLocation(latlng, route);
+  
+  if (locationResult && locationResult.index !== currentStepIndex) {
+    // Driver has moved to a different step!
+    const newStepIndex = locationResult.index;
+    
+    console.log(`🚗 Location jump detected: ${currentStepIndex} → ${newStepIndex}`);
+    
+    // Mark all skipped steps as completed (hide them)
+    for (let i = currentStepIndex; i < newStepIndex; i++) {
+      updateStepUI(activeRouteIndex, i, 'completed');
+      if (steps[i].lineLayer) route.group.removeLayer(steps[i].lineLayer);
+      if (steps[i].connectorLine) route.group.removeLayer(steps[i].connectorLine);
+    }
+    
+    // Update current step
+    currentStepIndex = newStepIndex;
+    announcedSteps.clear(); // Reset announcements
+    
+    // If this is the last step (destination)
+    if (currentStepIndex >= steps.length - 1) {
+      updateStepUI(activeRouteIndex, currentStepIndex, 'completed');
+      speak("Destination reached.", "step", { interrupt: true });
+      UI.aiBox.textContent = "Destination reached ✅";
+      
+      setTimeout(() => {
+        cleanupRoute(route);
+      }, 3000);
+      return;
+    }
+    
+    // Mark current step as active and announce it
+    updateStepUI(activeRouteIndex, currentStepIndex, 'active');
+    const step = steps[currentStepIndex];
+    const distText = step.distance < 1000 
+      ? `${step.distance.toFixed(0)} meters` 
+      : `${(step.distance / 1000).toFixed(1)} kilometers`;
+    
+    const announcement = `${step.text}. Proceed for ${distText}.`;
+    speak(announcement, "step", { interrupt: true });
+    announcedSteps.add(currentStepIndex);
+  }
+}
+
+// 🆕 Check for upcoming step announcements
+function checkUpcomingSteps(latlng) {
+  if (activeRouteIndex === null || !routes[activeRouteIndex]) return;
+  
+  const route = routes[activeRouteIndex];
+  const steps = route.steps;
+  
+  // Check next step (not current)
+  const nextStepIndex = currentStepIndex + 1;
+  if (nextStepIndex < steps.length && !announcedSteps.has(`lookahead_${nextStepIndex}`)) {
+    const nextStep = steps[nextStepIndex];
+    const nextStepLL = L.latLng(nextStep.lat, nextStep.lng);
+    const distToNext = latlng.distanceTo(nextStepLL);
+    
+    // Announce when within lookahead distance
+    if (distToNext <= SPEECH.LOOKAHEAD_DISTANCE) {
+      const distText = Math.round(distToNext) + " meters";
+      speak(`In ${distText}, ${nextStep.text}`, "step", { interrupt: false });
+      announcedSteps.add(`lookahead_${nextStepIndex}`);
+    }
+  }
+}
+
+function cleanupRoute(route) {
+  try { map.removeControl(route.rc); } catch {}
+  try { map.removeLayer(route.group); } catch {}
+  const destIndex = waypointMarkers.length - 1;
+  if (waypointMarkers[destIndex]) {
+    map.removeLayer(waypointMarkers[destIndex]);
+    waypointMarkers.splice(destIndex, 1);
+    waypoints.splice(destIndex + 1, 1);
+  }
+  const box = document.getElementById(`route-box-${route.routeIndex}`);
+  if (box) box.remove();
+  routes.splice(activeRouteIndex, 1);
+  activeRouteIndex = null;
+  currentStepIndex = 0;
+  announcedSteps.clear();
+  SPEECH.lastStepText = "";
+  SPEECH.lastStepSpokenAt = 0;
+  SPEECH.currentDisplay.kind = "eco";
+  rebuildRoutes();
+  refreshAIBox();
+}
+// 🆕 REPEAT CURRENT STEP INSTRUCTION (like eco tips)
+// Prevents silent period during long steps
+function maybeRepeatCurrentStep() {
+  if (activeRouteIndex === null || !routes[activeRouteIndex]) return;
+  const now = nowMs();
+  const route = routes[activeRouteIndex];
+  const steps = route.steps;
+  if (currentStepIndex >= steps.length) return;
+  const step = steps[currentStepIndex];
+  // Skip if warning active
+  if (now < SPEECH.warningActiveUntil) return;
+  // Speak again every 25s (configurable)
+  const repeatInterval = 60000;
+  const sinceLast = now - SPEECH.lastStepSpokenAt;
+  
+  if (sinceLast > repeatInterval) {
+    const distText =
+      step.distance < 1000
+        ? `${step.distance.toFixed(0)} meters`
+        : `${(step.distance / 1000).toFixed(1)} kilometers`;
+    const reminder = `Reminder: ${step.text}. Proceed for ${distText}.`;
+    speak(reminder, "step", { interrupt: false });
+  }
+}
+
+// ===== Main AI loop =====
 async function adaptiveAIDashboard(latlng, heading) {
   const currentSpeed = calculateGPSSpeed(latlng);
   const slopeData = await predictElevationAhead(latlng, heading);
@@ -566,7 +809,6 @@ async function adaptiveAIDashboard(latlng, heading) {
   const eco = ecoAdvisor(800, slope);
   lastSlope = slope;
 
-  // Update stats
   UI.speedEl.textContent = `${eco.speed} km/h`;
   UI.gearEl.textContent = `${eco.gear}`;
   UI.throttleEl.textContent = `${eco.throttle}%`;
@@ -576,45 +818,29 @@ async function adaptiveAIDashboard(latlng, heading) {
     const steps = route.steps;
     const routeDisplayIndex = route.routeIndex;
 
-    // Automatically move to next step based on location
-    for (let i = 0; i < steps.length; i++) {
-      const dist = latlng.distanceTo(L.latLng(steps[i].lat, steps[i].lng));
-      if (dist < 25) {
-        if (i !== currentStepIndex) {
-          currentStepIndex = i;
-          nextStepReady = true;
-          advanceStep();
-        }
-        break;
-      }
-    }
+    // 🆕 LOCATION-FIRST: Check if driver has jumped to a different step
+    smartStepAdvancement(latlng);
+    
+    // 🆕 Check for upcoming step announcements
+    checkUpcomingSteps(latlng);
 
     // Calculate remaining distance
     let remaining = 0;
     for (let i = currentStepIndex; i < steps.length; i++) remaining += steps[i].distance;
     const distanceEl = document.getElementById(`route-distance-${routeDisplayIndex}`);
     if (distanceEl) distanceEl.textContent = `${(remaining / 1000).toFixed(1)} km remaining`;
-
-    // Speak current step when close
-    if (currentStepIndex < steps.length) {
-      const step = steps[currentStepIndex];
-      const stepLL = L.latLng(step.lat, step.lng);
-      const distanceToStep = latlng.distanceTo(stepLL);
-      if (distanceToStep <= 80 && nextStepReady) {
-        nextStepReady = false;
-        speakCurrentStep();
-      }
-    }
   }
 
   checkWarnings(currentSpeed, eco);
   maybeSpeakEco(eco);
+  maybeRepeatCurrentStep(); // 🆕 remind current step periodically
 }
 
 // ===== GPS watch =====
 if (navigator.geolocation){
   navigator.geolocation.watchPosition(async pos=>{
     const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+    updateSpeedLimit(latlng);
     const currentSpeed = calculateGPSSpeed(latlng);
     let heading = pos.coords.heading;
     const MIN_SPEED_FOR_HEADING = 5/3.6;
@@ -625,9 +851,7 @@ if (navigator.geolocation){
         heading = m ? parseFloat(m[1]) : 0;
       } else heading = 0;
     }
-
     if(!waypoints.length) waypoints.push(latlng); else waypoints[0]=latlng;
-
     if(!userMarker){ userMarker = L.marker(latlng,{icon:carIcon}).addTo(map); map.setView(latlng,22); }
     else { userMarker.setLatLng(latlng); }
 
@@ -643,12 +867,10 @@ if (navigator.geolocation){
     const carEl = document.getElementById('user-car-svg');
     if (carEl) carEl.style.transform = `rotate(${heading}deg)`;
 
-    // Process loop
     await adaptiveAIDashboard(latlng, heading);
   }, ()=>console.warn("GPS unavailable"), { enableHighAccuracy:true, maximumAge:1000, timeout:5000 });
 }
 
-// ===== Country (used by search language) =====
 let driverCountry = null;
 async function updateDriverCountry(latlng) {
   try {
@@ -657,40 +879,41 @@ async function updateDriverCountry(latlng) {
     driverCountry = data.address && (data.address.country_code || "").toUpperCase();
   } catch (err) { console.warn("Country fetch failed:", err); }
 }
-document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "visible") return;
-    try { speechSynthesis.resume(); } catch {}
-    const t = nowMs();
-    SPEECH.stepFreezeUntil = t + 600;
-    setTimeout(() => {
-        // 1) WARNING has highest priority
-        if (t < SPEECH.warningActiveUntil && SPEECH.currentDisplay.kind === "warning") {
-            aiBoxShow("warning", SPEECH.currentDisplay.text);
-            speak(SPEECH.currentDisplay.text, "warning", { interrupt:true });
-            return;
-        }
-        // 2) ACTIVE ROUTE → ALWAYS speak step first
-        if (activeRouteIndex !== null && SPEECH.lastStepText) {
-            speak(SPEECH.lastStepText, "step", { interrupt:true });
-            setTimeout(() => speak(SPEECH.lastEcoText, "eco", { interrupt:false }), 1000);
-            return;
-        }
-        // 3) No route → speak eco
-        speak(SPEECH.lastEcoText, "eco", { interrupt:true });
 
-    }, 250);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  try { speechSynthesis.resume(); } catch {}
+  const t = nowMs();
+  setTimeout(() => {
+    if (t < SPEECH.warningActiveUntil && SPEECH.currentDisplay.kind === "warning") {
+      aiBoxShow("warning", SPEECH.currentDisplay.text);
+      speak(SPEECH.currentDisplay.text, "warning", { interrupt:true });
+      return;
+    }
+    if (activeRouteIndex !== null && SPEECH.lastStepText) {
+      speak(SPEECH.lastStepText, "step", { interrupt:true });
+      setTimeout(() => speak(SPEECH.lastEcoText, "eco", { interrupt:false }), 1000);
+      return;
+    }
+    speak(SPEECH.lastEcoText, "eco", { interrupt:true });
+  }, 250);
 });
 
-// ===== Off-route: retarget start only =====
-async function checkOffRoute(latlng) {
-  if (!routes.length) return;
-  const active = routes[activeRouteIndex ?? 0]; if (!active || !active.steps) return;
-  let minDist = Infinity;
-  active.steps.forEach(s => { const d = latlng.distanceTo([s.lat, s.lng]); if (d < minDist) minDist = d; });
-  if (minDist > 60 && active.rc && active.rc.getWaypoints) {
-    const wps = active.rc.getWaypoints(); wps[0].latLng = latlng; active.rc.setWaypoints(wps);
+// 🌍 FREE TRANSLATION USING NOMINATIM (English reverse-geocode)
+async function getEnglishName(lat, lon) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&addressdetails=1&accept-language=en`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data && data.display_name) {
+      return data.display_name;
+    }
+  } catch (err) {
+    console.warn("Translation API failed:", err);
   }
+  return null;
 }
+
 
 // ===== Route creation =====
 async function createRoute(start, end, color, marker = null, index = null) {
@@ -735,30 +958,26 @@ async function createRoute(start, end, color, marker = null, index = null) {
   `;
   header.onclick = () => content.style.display = content.style.display === "block" ? "none" : "block";
   header.querySelector("button").onclick = () => {
-      try { speechSynthesis.cancel(); } catch {}
-      // Remove layers
-      try { map.removeControl(rc); } catch {}
-      try { map.removeLayer(group); } catch {}
-      // Remove marker
-      if (marker) {
-          const mIndex = waypointMarkers.indexOf(marker);
-          if (mIndex !== -1) {
-              map.removeLayer(marker);
-              waypointMarkers.splice(mIndex, 1);
-              waypoints.splice(mIndex + 1, 1);
-          }
+    try { speechSynthesis.cancel(); } catch {}
+    try { map.removeControl(rc); } catch {}
+    try { map.removeLayer(group); } catch {}
+    if (marker) {
+      const mIndex = waypointMarkers.indexOf(marker);
+      if (mIndex !== -1) {
+        map.removeLayer(marker);
+        waypointMarkers.splice(mIndex, 1);
+        waypoints.splice(mIndex + 1, 1);
       }
-      // Remove UI
-      box.remove();
-      // Reset navigation state
-      activeRouteIndex = null;
-      currentStepIndex = 0;
-      nextStepReady = true;
-      SPEECH.lastStepText = "";
-      SPEECH.lastStepSpokenAt = 0;
-      routes = routes.filter(r => r.routeIndex !== routeIndex);
-      rebuildRoutes();
-      refreshAIBox();
+    }
+    box.remove();
+    activeRouteIndex = null;
+    currentStepIndex = 0;
+    announcedSteps.clear();
+    SPEECH.lastStepText = "";
+    SPEECH.lastStepSpokenAt = 0;
+    routes = routes.filter(r => r.routeIndex !== routeIndex);
+    rebuildRoutes();
+    refreshAIBox();
   };
 
   rc.on("routesfound", async e => {
@@ -768,62 +987,242 @@ async function createRoute(start, end, color, marker = null, index = null) {
 
     content.innerHTML = "";
     const steps = [];
-    r.instructions.forEach((s, i) => {
-      const idxStart = s.index;
-      const idxEnd = r.instructions[i + 1] ? r.instructions[i + 1].index : coords.length;
-      const seg = coords.slice(idxStart, idxEnd).map(c => [c.lat, c.lng]);
-      const elev = elevs[idxStart] || 0;
-      const line = L.polyline(seg, { color: routeColor, weight: 5, opacity: 0.8 }).addTo(group);
-      const div = document.createElement("div");
-      div.className = "route-step";
-      div.onmouseenter = () => line.setStyle({ weight: 9, opacity: 1, color: "#FFFF33" });
-      div.onmouseleave = () => line.setStyle({ weight: 5, opacity: 0.9, color: routeColor });
-      div.innerHTML = `<b>${s.text}</b><div>${(s.distance/1000).toFixed(2)} km | Elev ${elev.toFixed(1)} m`;
-      content.appendChild(div);
-      let connector = null;
-      if (i < r.instructions.length - 1) {
-        connector = L.polyline([
-            [coords[idxStart].lat, coords[idxStart].lng],
-            [coords[idxEnd-1].lat, coords[idxEnd-1].lng]
-        ], { color: routeColor, weight: 3, opacity: 0.6 }).addTo(group);
+
+    // ============================
+    // FIRST STEP — translate IMMEDIATELY
+    // ============================
+    (async () => {
+      if (r.instructions.length > 0) {
+        const firstStep = r.instructions[0];
+        const idxStart = firstStep.index;
+        const idxEnd = r.instructions.length > 1 ? r.instructions[1].index : coords.length;
+
+        const segmentCoords = coords.slice(idxStart, idxEnd).map(c => [c.lat, c.lng]);
+        const elev = elevs[idxStart] || 0;
+
+        const stepLine = L.polyline(segmentCoords, {
+          color: routeColor,
+          weight: 5,
+          opacity: 0.8
+        }).addTo(group);
+
+        const item = document.createElement("div");
+        item.className = "route-step";
+        item.innerHTML =
+          `<b>${firstStep.text}</b><div>${(firstStep.distance / 1000).toFixed(2)} km | Elev ${elev.toFixed(1)} m</div>`;
+        content.appendChild(item);
+
+        const stepObj = {
+          lat: coords[idxStart].lat,
+          lng: coords[idxStart].lng,
+          text: firstStep.text,
+          elev,
+          element: item,
+          distance: firstStep.distance,
+          lineLayer: stepLine,
+          translated: false
+        };
+        steps.push(stepObj);
+
+        // 🌍 Translate first step
+        try {
+          const endIdx = Math.min(idxEnd - 1, coords.length - 1);
+          let englishRoad = await getEnglishName(coords[endIdx].lat, coords[endIdx].lng);
+
+          if (englishRoad) {
+            englishRoad = englishRoad.split(",")[0].trim();
+
+            const dirMatch =
+              firstStep.text.match(/(.*?(?:onto|on|toward)\s)/i);
+            const directionPart = dirMatch && dirMatch[1] ? dirMatch[1] : "";
+
+            const translatedText =
+              directionPart ? directionPart + englishRoad : `${firstStep.text} (${englishRoad})`;
+
+            item.querySelector("b").textContent = translatedText;
+            stepObj.text = translatedText;
+            stepObj.translated = true;
+          }
+        } catch (err) {
+          console.warn("Translation failed for first step:", err);
+        }
+        
+
+        // 🔊 Speak immediately if this is the active route
+        if (activeRouteIndex === null) {
+          activeRouteIndex = routeIndex;
+          currentStepIndex = 0;
+          announcedSteps.clear();
+
+          const distText =
+            firstStep.distance < 1000
+              ? `${firstStep.distance.toFixed(0)} meters`
+              : `${(firstStep.distance / 1000).toFixed(1)} kilometers`;
+
+          speak(`${stepObj.text}. Proceed for ${distText}.`, "step", {
+            interrupt: true
+          });
+
+          updateStepUI(routeIndex, 0, "active");
+          announcedSteps.add(0);
+        }
+        // ==========================================================
+        // FEED VIRTUAL GPS FOR TESTING (NO LIVE LOCATION REQUIRED)
+        // ==========================================================
+        if (useVirtualGPS) {
+        const fakeLL = L.latLng(stepObj.lat, stepObj.lng);
+        updateVirtualGPS(fakeLL);
+        }
+
       }
-      steps.push({ 
-        lat: coords[idxStart].lat, 
-        lng: coords[idxStart].lng, 
-        text: s.text, 
-        elev, 
-        distance: s.distance, 
-        element: div, 
-        lineLayer: line, 
-        connectorLine: connector,
-        expectedHeading: s.heading || 0
+      
+
+      // =============================================
+      // REMAINING STEPS — built fast, translated slow
+      // =============================================
+      r.instructions.slice(1).forEach((s, jOffset) => {
+        const j = jOffset + 1;
+
+        const idxStart = s.index;
+        const idxEnd =
+          j + 1 < r.instructions.length ? r.instructions[j + 1].index : coords.length;
+
+        const seg = coords.slice(idxStart, idxEnd).map(c => [c.lat, c.lng]);
+        const elev = elevs[idxStart] || 0;
+
+        const stepLine = L.polyline(seg, {
+          color: routeColor,
+          weight: 5,
+          opacity: 0.8
+        }).addTo(group);
+
+        // Visual connector
+        if (j > 0) {
+          const prev = steps[j - 1];
+          if (prev && prev.lineLayer) {
+            const lastLat = prev.lineLayer.getLatLngs().slice(-1)[0];
+            const newLat = seg[0];
+            const connector = L.polyline([lastLat, newLat], {
+              color: routeColor,
+              weight: 3,
+              opacity: 0.6
+            }).addTo(group);
+            prev.connectorLine = connector;
+          }
+        }
+
+        const item = document.createElement("div");
+        item.className = "route-step";
+        item.innerHTML =
+          `<b>${s.text}</b><div>${(s.distance / 1000).toFixed(2)} km | Elev ${elev.toFixed(1)} m</div>`;
+        content.appendChild(item);
+
+        item.addEventListener("mouseenter", () =>
+          stepLine.setStyle({ color: "#00FF00", weight: 6, opacity: 0.9 })
+        );
+        item.addEventListener("mouseleave", () =>
+          stepLine.setStyle({ color: routeColor, weight: 5, opacity: 0.5 })
+        );
+
+        const stepObj = {
+          lat: coords[idxStart].lat,
+          lng: coords[idxStart].lng,
+          text: s.text,
+          elev,
+          element: item,
+          distance: s.distance,
+          lineLayer: stepLine,
+          translated: false
+        };
+
+        steps.push(stepObj);    
+        
+
+        // 💫 Translate later to avoid Nominatim rate-limit
+        setTimeout(async () => {
+          if (stepObj.translated) return;
+
+          try {
+            const endIdx = Math.min(idxEnd - 1, coords.length - 1);
+
+            let englishRoad = await getEnglishName(coords[endIdx].lat, coords[endIdx].lng);
+
+            if (englishRoad) {
+              englishRoad = englishRoad.split(",")[0].trim();
+
+              const dirMatch =
+                s.text.match(/(.*?(?:onto|on|toward)\s)/i);
+              const directionPart =
+                dirMatch && dirMatch[1] ? dirMatch[1] : "";
+
+              const translatedText =
+                directionPart ? directionPart + englishRoad : `${s.text} (${englishRoad})`;
+
+              item.querySelector("b").textContent = translatedText;
+              stepObj.text = translatedText;
+              stepObj.translated = true;
+
+              // 🔊 If this is CURRENT active step → speak updated text
+              if (
+                activeRouteIndex === routeIndex &&
+                currentStepIndex === j
+              ) {
+                SPEECH.lastStepText = translatedText;
+                SPEECH.lastStepSpokenAt = nowMs();
+                aiBoxShow("step", translatedText);
+                speak(translatedText, "step", { interrupt: true });
+              }
+            }
+          } catch (err) {
+            console.warn("Step translation failed:", err);
+          }
+        }, j * 500); // stagger to avoid rate-limits
       });
-    });
+    })();
 
+    // ================================
+    // SAVE route object (everything else unchanged)
+    // ================================
     const existing = routes.find(x => x.routeIndex === routeIndex);
-    if (existing) { existing.rc = rc; existing.group = group; existing.steps = steps; existing.endKey = endKey; existing.totalDistance = r.summary.totalDistance; }
-    else { routes.push({ rc, group, steps, endKey, routeIndex, totalDistance: r.summary.totalDistance }); }
+    if (existing) {
+      existing.rc = rc;
+      existing.group = group;
+      existing.steps = steps;
+      existing.endKey = endKey;
+      existing.totalDistance = r.summary.totalDistance;
+    } else {
+      routes.push({
+        rc,
+        group,
+        steps,
+        endKey,
+        routeIndex,
+        totalDistance: r.summary.totalDistance
+      });
+    }
 
-    document.getElementById(`route-distance-${routeIndex}`).textContent = `${(r.summary.totalDistance/1000).toFixed(1)} km total`;
-    if (activeRouteIndex === null) { activeRouteIndex = routeIndex; currentStepIndex = 0; speakCurrentStep(); }
+    document.getElementById(`route-distance-${routeIndex}`).textContent =
+      `${(r.summary.totalDistance / 1000).toFixed(1)} km total`;
   });
+
 }
 
-// ===== Map click → preview =====
 map.on('click', e => {
   const latlng = e.latlng;
   let startPoint = null;
   if (routes.length > 0) {
     const lastRoute = routes[routes.length - 1];
     const lastSteps = lastRoute.steps;
-    if (lastSteps.length > 0) { const lastStep = lastSteps[lastSteps.length - 1]; startPoint = L.latLng(lastStep.lat, lastStep.lng); }
+    if (lastSteps.length > 0) { 
+      const lastStep = lastSteps[lastSteps.length - 1]; 
+      startPoint = L.latLng(lastStep.lat, lastStep.lng); 
+    }
   }
   if (!startPoint) startPoint = userMarker ? userMarker.getLatLng() : map.getCenter();
   openPreviewTo(latlng, "Pinned location", true);
   preview.start = startPoint;
 });
 
-// ===== Rebuild chain =====
 function rebuildRoutes() {
   const driver = userMarker ? userMarker.getLatLng() : map.getCenter();
   const validWaypoints = [driver]; const validMarkers = [];
@@ -838,7 +1237,6 @@ function rebuildRoutes() {
   }
 }
 
-// ===== Map UI bits =====
 let mapFull = false;
 document.getElementById("map-toggle").addEventListener("click",()=>{
   const mapContainer=document.querySelector(".map-container");
@@ -864,36 +1262,91 @@ locateBtn.addEventListener("click", () => {
   else { locateBtn.style.background = "#1e90ff"; locateBtn.title = "Recenter to my location"; }
 });
 
-// ===== Search + mic (unchanged) =====
+// ===== Search =====
 const input = document.getElementById("searchInput");
 const suggestBox = document.getElementById("suggestBox");
 let results = []; let searchTimer = null;
 
+// === Improved Intelligent Search Engine ===
 async function getSearchResults(query) {
   const center = userMarker ? userMarker.getLatLng() : map.getCenter();
   const lang = driverCountry ? driverCountry.toLowerCase() : "en";
   const latlngMatch = query.match(/^([-]?[0-9]+\.[0-9]+)[,\s]+([-]?[0-9]+\.[0-9]+)$/);
-  if (latlngMatch) return [{ name:"Pinned Location", display_name:"Manual coordinate input", lat:parseFloat(latlngMatch[1]), lon:parseFloat(latlngMatch[2]), score:100 }];
-  let allResults = [];
+
+  // ✅ Coordinate Input (latitude, longitude)
+  if (latlngMatch) {
+    const lat = parseFloat(latlngMatch[1]), lon = parseFloat(latlngMatch[2]);
+    return [{
+      name: `Pinned Location (${lat.toFixed(4)}, ${lon.toFixed(4)})`,
+      display_name: "Manual coordinates input",
+      lat, lon, score: 200
+    }];
+  }
+
+  const allResults = [];
+  const encode = encodeURIComponent(query);
+
+  // ✅ Photon (fast, local-biased)
   try {
-    const ph = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&lat=${center.lat}&lon=${center.lng}&limit=8&lang=${lang}`);
-    const json = await ph.json();
-    if (json.features) json.features.forEach(f => allResults.push({ name:f.properties.name || f.properties.street || f.properties.locality || "Unnamed",
-      display_name:[f.properties.name, f.properties.city, f.properties.country].filter(Boolean).join(", "),
-      lat:f.geometry.coordinates[1], lon:f.geometry.coordinates[0], score:50 }));
-  } catch {}
+    const photon = await fetch(`https://photon.komoot.io/api/?q=${encode}&lat=${center.lat}&lon=${center.lng}&limit=6&lang=${lang}`);
+    const j = await photon.json();
+    if (j.features) {
+      j.features.forEach(f => {
+        const p = f.properties;
+        allResults.push({
+          name: p.name || p.street || p.locality || p.city || "Unnamed",
+          display_name: [p.name, p.city, p.state, p.country].filter(Boolean).join(", "),
+          lat: f.geometry.coordinates[1],
+          lon: f.geometry.coordinates[0],
+          score: 100
+        });
+      });
+    }
+  } catch (e) { console.warn("Photon failed", e); }
+
+  // ✅ Nominatim (global accuracy)
   try {
-    const nm = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=8&addressdetails=1&accept-language=${lang}`);
-    const data = await nm.json();
-    data.forEach(f => allResults.push({ name:f.display_name.split(",")[0], display_name:f.display_name, lat:parseFloat(f.lat), lon:parseFloat(f.lon), score:70 }));
-  } catch {}
+    const nom = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encode}&limit=6&addressdetails=1&accept-language=${lang}&bounded=1&viewbox=${center.lng-1},${center.lat+1},${center.lng+1},${center.lat-1}`);
+    const ndata = await nom.json();
+    ndata.forEach(f => allResults.push({
+      name: f.display_name.split(",")[0],
+      display_name: f.display_name,
+      lat: parseFloat(f.lat),
+      lon: parseFloat(f.lon),
+      score: 80
+    }));
+  } catch (e) { console.warn("Nominatim failed", e); }
+
+  // ✅ Maps.co backup (broad but less localized)
   try {
-    const gr = await fetch(`https://geocode.maps.co/search?q=${encodeURIComponent(query)}`);
+    const gr = await fetch(`https://geocode.maps.co/search?q=${encode}`);
     const gd = await gr.json();
-    gd.forEach(f => allResults.push({ name:f.display_name.split(",")[0], display_name:f.display_name, lat:parseFloat(f.lat), lon:parseFloat(f.lon), score:90 }));
-  } catch {}
-  allResults.sort((a,b)=>b.score-a.score);
-  return allResults.slice(0,10);
+    gd.forEach(f => allResults.push({
+      name: f.display_name.split(",")[0],
+      display_name: f.display_name,
+      lat: parseFloat(f.lat),
+      lon: parseFloat(f.lon),
+      score: 60
+    }));
+  } catch (e) { console.warn("Maps.co failed", e); }
+
+  // ✅ Sort by distance proximity + score
+  allResults.forEach(r => {
+    const dist = Math.hypot(center.lat - r.lat, center.lng - r.lon);
+    r.rank = r.score - dist * 30; // bias nearby results
+  });
+  allResults.sort((a, b) => b.rank - a.rank);
+
+  // Deduplicate by rounded coordinate
+  const seen = new Set();
+  const unique = allResults.filter(r => {
+    const key = `${r.lat.toFixed(3)},${r.lon.toFixed(3)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return unique.slice(0, 10);
 }
 
 input.oninput = () => {
@@ -902,10 +1355,13 @@ input.oninput = () => {
   searchTimer = setTimeout(async () => {
     const data = await getSearchResults(q); results = data; suggestBox.innerHTML = "";
     if (!data.length) { suggestBox.style.display = "none"; return; }
-    data.forEach((f,i)=>{
+    data.forEach((f, i) => {
       const div = document.createElement("div");
-      div.className="suggest-item";
-      div.innerHTML=`<b>${f.name}</b><div style="font-size:12px;color:#bbb;">${f.display_name}</div>`;
+      div.className = "suggest-item";
+      div.innerHTML = `
+        <b>${f.name}</b>
+        <div class="subtext">${f.display_name}</div>
+      `;
       div.onclick = () => selectResult(i);
       suggestBox.appendChild(div);
     });

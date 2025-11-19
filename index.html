@@ -36,21 +36,11 @@ border:none;outline:none;}
 font-weight:bold;cursor:pointer;box-shadow:0 0.4vh 1vh rgba(0,0,0,0.3);}
 /* === Suggestion Box Modern UI === */
 #suggestBox {
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 90%;
-  background: rgba(22, 26, 38, 0.96);
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-  backdrop-filter: blur(8px);
-  z-index: 2000;
-  overflow: hidden;
-  display: none;
+  position: absolute;top: 100%;left: 50%;
+  transform: translateX(-50%);width: 90%;max-height: 45vh;overflow-y: auto;background: rgba(22, 26, 38, 0.96);
+  border: 1px solid rgba(255,255,255,0.12);border-radius: 12px;box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  backdrop-filter: blur(8px);z-index: 2000;display: none;
 }
-
 .suggest-item {
   padding: 10px 14px;
   border-bottom: 1px solid rgba(255,255,255,0.08);
@@ -212,7 +202,6 @@ align-items:center;color:#fff;font-size:0.9rem;}
   <div class="stat-card throttle-box"><div class="stat-label">Throttle</div><div class="stat-value" id="throttle">0%</div></div>
   <div class="stat-card" style="background:#d9534f;"><div class="stat-label">Speed Limit</div><div class="stat-value" id="speedLimit">-- km/h</div>
 </div>
-
 </div>
 
 <div class="search-row">
@@ -483,9 +472,9 @@ function ecoAdvisor(distAhead, slope){
   let tip = "", speed = 40, gear = 3, throttle = 45;
   switch (currentRoadType) {
     case "highway": speed = 80; gear = 5; throttle = 55; tip = "Highway — maintain steady speed."; break;
-    case "city": speed = 30; gear = 3; throttle = 40; tip = "City — anticipate stops."; break;
-    case "residential": speed = 25; gear = 3; throttle = 35; tip = "Residential — maintain low speed."; break;
-    case "mountain": speed = 35; gear = 2; throttle = 50; tip = "Mountain — use engine braking."; break;
+    case "city": speed = 40; gear = 3; throttle = 40; tip = "City — anticipate stops."; break;
+    case "residential": speed = 35; gear = 3; throttle = 35; tip = "Residential — maintain low speed."; break;
+    case "mountain": speed = 45; gear = 2; throttle = 50; tip = "Mountain — use engine braking."; break;
     default: tip = "Smooth driving.";
   }
   if (slope > 2.5) tip += " Downhill ahead.";
@@ -601,7 +590,7 @@ function maybeSpeakEco(eco) {
   SPEECH.lastSlopeBucket = bucket;
   const periodicDue = (t - SPEECH.lastEcoSpokenAt) > SPEECH.ECO_PERIODIC;
   const tipText = `Road type: ${currentRoadType}. ${bucket === "uphill" ? "Uphill ahead." : bucket === "downhill" ? "Downhill ahead." : "Level road."} ` +
-                  `Recommended ${eco.speed} kilometer per hour.`;
+                  `Recommended Speed ${eco.speed} kilometer per hour.`;
 
   SPEECH.lastEcoText = tipText;
   SPEECH.lastRoadType = currentRoadType;
@@ -720,11 +709,13 @@ function smartStepAdvancement(latlng) {
     // Mark current step as active and announce it
     updateStepUI(activeRouteIndex, currentStepIndex, 'active');
     const step = steps[currentStepIndex];
-    const distText = step.distance < 1000 
-      ? `${step.distance.toFixed(0)} meters` 
-      : `${(step.distance / 1000).toFixed(1)} kilometers`;
-    
-    const announcement = `${step.text}. Proceed for ${distText}.`;
+    // 🆕 LIVE recalculated distance
+    const liveDist = liveStepDistance(latlng);
+    let liveText =
+        liveDist < 1000 ?
+        `${liveDist.toFixed(0)} meters` :
+        `${(liveDist/1000).toFixed(1)} kilometers`;
+    const announcement = `${step.text}. Proceed for ${liveDist}.`;
     speak(announcement, "step", { interrupt: true });
     announcedSteps.add(currentStepIndex);
   }
@@ -746,13 +737,66 @@ function checkUpcomingSteps(latlng) {
     
     // Announce when within lookahead distance
     if (distToNext <= SPEECH.LOOKAHEAD_DISTANCE) {
-      const distText = Math.round(distToNext) + " meters";
+      let distText =distToNext < 1000 ?`${distToNext.toFixed(0)} meters` :`${(distToNext/1000).toFixed(1)} kilometers`;
       speak(`In ${distText}, ${nextStep.text}`, "step", { interrupt: false });
       announcedSteps.add(`lookahead_${nextStepIndex}`);
     }
   }
 }
 
+// 🚨 OFF-ROUTE DETECTION
+// =========================
+function isOffRoute(latlng, route, threshold = 25) {
+  if (!route || !route.steps) return false;
+
+  let minDist = Infinity;
+
+  for (const step of route.steps) {
+    const pt = L.latLng(step.lat, step.lng);
+    const d = latlng.distanceTo(pt);
+    if (d < minDist) minDist = d;
+  }
+
+  return minDist > threshold;
+}
+
+// 🔄 RE-ROUTING ENGINE
+// =========================
+async function reroute(currentPos, destination) {
+  console.log("🔄 Rerouting...");
+  speak("Rerouting…", "step", { interrupt: true });
+
+  // Remove old route
+  if (routes[activeRouteIndex]) cleanupRoute(routes[activeRouteIndex]);
+
+  // Build NEW route
+  createRoute(currentPos, destination, "#4DA6FF");
+
+  // Reset step tracking
+  currentStepIndex = 0;
+  announcedSteps.clear();
+}
+function updateRemainingDistanceLive(latlng, routeIndex) {
+  const route = routes[routeIndex];
+  if (!route || !route.steps) return;
+
+  let remaining = 0;
+
+  for (let i = currentStepIndex; i < route.steps.length; i++) {
+    const step = route.steps[i];
+
+    if (i === currentStepIndex) {
+      const targetLL = L.latLng(step.lat, step.lng);
+      const dist = latlng.distanceTo(targetLL);
+      remaining += dist;
+    } else {
+      remaining += step.distance;
+    }
+  }
+
+  const el = document.getElementById(`route-distance-${routeIndex}`);
+  if (el) el.textContent = `${(remaining / 1000).toFixed(1)} km remaining`;
+}
 function cleanupRoute(route) {
   try { map.removeControl(route.rc); } catch {}
   try { map.removeLayer(route.group); } catch {}
@@ -774,6 +818,7 @@ function cleanupRoute(route) {
   rebuildRoutes();
   refreshAIBox();
 }
+
 // 🆕 REPEAT CURRENT STEP INSTRUCTION (like eco tips)
 // Prevents silent period during long steps
 function maybeRepeatCurrentStep() {
@@ -790,13 +835,19 @@ function maybeRepeatCurrentStep() {
   const sinceLast = now - SPEECH.lastStepSpokenAt;
   
   if (sinceLast > repeatInterval) {
-    const distText =
-      step.distance < 1000
-        ? `${step.distance.toFixed(0)} meters`
-        : `${(step.distance / 1000).toFixed(1)} kilometers`;
-    const reminder = `Reminder: ${step.text}. Proceed for ${distText}.`;
+    const liveDist = liveStepDistance(userMarker.getLatLng());
+    let distText =liveDist < 1000 ?`${liveDist.toFixed(0)} meters` :`${(liveDist/1000).toFixed(1)} kilometers`;
+    const reminder = `Reminder: ${step.text}. Proceed for ${liveDist}.`;
     speak(reminder, "step", { interrupt: false });
   }
+}
+function liveStepDistance(latlng) {
+    if (activeRouteIndex === null || !routes[activeRouteIndex]) return null;
+    const route = routes[activeRouteIndex];
+    const step = route.steps[currentStepIndex];
+    if (!step) return null;
+    const target = L.latLng(step.lat, step.lng);
+    return latlng.distanceTo(target); // in meters
 }
 
 // ===== Main AI loop =====
@@ -868,6 +919,18 @@ if (navigator.geolocation){
     if (carEl) carEl.style.transform = `rotate(${heading}deg)`;
 
     await adaptiveAIDashboard(latlng, heading);
+    // 📍 Live remaining distance update
+    if (activeRouteIndex !== null) {
+      updateRemainingDistanceLive(latlng, activeRouteIndex);
+    }
+    // 🚨 Check if driver is off route and reroute
+    if (activeRouteIndex !== null && routes[activeRouteIndex]) {
+      const route = routes[activeRouteIndex];
+      const destination = route.steps[route.steps.length - 1];
+      if (isOffRoute(latlng, route)) {
+        reroute(latlng, L.latLng(destination.lat, destination.lng));
+      }
+    }
   }, ()=>console.warn("GPS unavailable"), { enableHighAccuracy:true, maximumAge:1000, timeout:5000 });
 }
 
@@ -902,16 +965,22 @@ document.addEventListener("visibilitychange", () => {
 // 🌍 FREE TRANSLATION USING NOMINATIM (English reverse-geocode)
 async function getEnglishName(lat, lon) {
   try {
-    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&addressdetails=1&accept-language=en`;
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&addressdetails=1&lat=${lat}&lon=${lon}&accept-language=en`;
     const res = await fetch(url);
     const data = await res.json();
-    if (data && data.display_name) {
-      return data.display_name;
-    }
-  } catch (err) {
-    console.warn("Translation API failed:", err);
+    if (!data || !data.address) return null;
+    let road =
+      data.address.road ||
+      data.address.neighbourhood ||
+      data.address.suburb ||
+      data.address.city ||
+      data.address.state;
+    // ❌ Avoid numeric-only roads
+    if (road && /^\d+$/.test(road.trim())) return null;
+    return road;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 
@@ -1271,82 +1340,140 @@ let results = []; let searchTimer = null;
 async function getSearchResults(query) {
   const center = userMarker ? userMarker.getLatLng() : map.getCenter();
   const lang = driverCountry ? driverCountry.toLowerCase() : "en";
-  const latlngMatch = query.match(/^([-]?[0-9]+\.[0-9]+)[,\s]+([-]?[0-9]+\.[0-9]+)$/);
+  const q = query.trim().toLowerCase();
 
-  // ✅ Coordinate Input (latitude, longitude)
-  if (latlngMatch) {
-    const lat = parseFloat(latlngMatch[1]), lon = parseFloat(latlngMatch[2]);
-    return [{
-      name: `Pinned Location (${lat.toFixed(4)}, ${lon.toFixed(4)})`,
-      display_name: "Manual coordinates input",
-      lat, lon, score: 200
-    }];
-  }
-
-  const allResults = [];
+  const results = [];
   const encode = encodeURIComponent(query);
 
-  // ✅ Photon (fast, local-biased)
+  // ============================
+  // 1️⃣ Detect NEAR-ME intent
+  // ============================
+  const nearMe = /near me|nearby|around me|close to me/gi.test(q);
+
+  // ============================
+  // 2️⃣ Detect POI category (no keywords needed)
+  // Advanced NLP-style categorization
+  // ============================
+  const POI_CATEGORIES = [
+    { words: ["food", "eat", "restaurant", "restaurants", "dining", "lunch", "breakfast"], tag: "restaurant" },
+    { words: ["atm", "cash", "bank"], tag: "atm" },
+    { words: ["petrol", "pump", "gas", "fuel"], tag: "fuel" },
+    { words: ["gym", "fitness"], tag: "gym" },
+    { words: ["hotel", "resort", "stay"], tag: "hotel" },
+    { words: ["hospital", "clinic", "doctor"], tag: "hospital" },
+    { words: ["park", "garden"], tag: "park" },
+    { words: ["mall", "shopping", "market"], tag: "mall" }
+  ];
+
+  let poiTag = null;
+  for (const c of POI_CATEGORIES) {
+    if (c.words.some(w => q.includes(w))) poiTag = c.tag;
+  }
+
+  // ============================
+  // 3️⃣ POI Search (Overpass)
+  // ============================
+  if (poiTag) {
+    try {
+      const radius = nearMe ? 3000 : 9000; // 3km if "near me", else larger
+      const overpassQuery = `
+        [out:json][timeout:25];
+        (
+          node["amenity"="${poiTag}"](around:${radius},${center.lat},${center.lng});
+          way["amenity"="${poiTag}"](around:${radius},${center.lat},${center.lng});
+          node["shop"="${poiTag}"](around:${radius},${center.lat},${center.lng});
+        );
+        out center;
+      `;
+      const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(overpassQuery);
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data.elements) {
+        data.elements.forEach(el => {
+          const name = el.tags.name || poiTag.toUpperCase();
+          results.push({
+            name,
+            display_name: name + " (POI)",
+            lat: el.lat || el.center.lat,
+            lon: el.lon || el.center.lon,
+            score: 300
+          });
+        });
+      }
+    } catch (err) {
+      console.warn("POI search failed:", err);
+    }
+  }
+
+  // ============================
+  // 4️⃣ General search providers
+  // ============================
+
+  // PHOTON → Best for streets, cities, shops
   try {
     const photon = await fetch(`https://photon.komoot.io/api/?q=${encode}&lat=${center.lat}&lon=${center.lng}&limit=6&lang=${lang}`);
     const j = await photon.json();
     if (j.features) {
       j.features.forEach(f => {
         const p = f.properties;
-        allResults.push({
+        results.push({
           name: p.name || p.street || p.locality || p.city || "Unnamed",
           display_name: [p.name, p.city, p.state, p.country].filter(Boolean).join(", "),
           lat: f.geometry.coordinates[1],
           lon: f.geometry.coordinates[0],
-          score: 100
+          score: poiTag ? 50 : 100
         });
       });
     }
-  } catch (e) { console.warn("Photon failed", e); }
+  } catch {}
 
-  // ✅ Nominatim (global accuracy)
+  // NOMINATIM → Best accuracy
   try {
-    const nom = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encode}&limit=6&addressdetails=1&accept-language=${lang}&bounded=1&viewbox=${center.lng-1},${center.lat+1},${center.lng+1},${center.lat-1}`);
+    const nom = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encode}&limit=6&addressdetails=1&accept-language=${lang}`);
     const ndata = await nom.json();
-    ndata.forEach(f => allResults.push({
+    ndata.forEach(f => results.push({
       name: f.display_name.split(",")[0],
       display_name: f.display_name,
       lat: parseFloat(f.lat),
       lon: parseFloat(f.lon),
-      score: 80
+      score: poiTag ? 70 : 120
     }));
-  } catch (e) { console.warn("Nominatim failed", e); }
+  } catch {}
 
-  // ✅ Maps.co backup (broad but less localized)
+  // MAPS.CO → Backup
   try {
     const gr = await fetch(`https://geocode.maps.co/search?q=${encode}`);
     const gd = await gr.json();
-    gd.forEach(f => allResults.push({
+    gd.forEach(f => results.push({
       name: f.display_name.split(",")[0],
       display_name: f.display_name,
       lat: parseFloat(f.lat),
       lon: parseFloat(f.lon),
-      score: 60
+      score: 40
     }));
-  } catch (e) { console.warn("Maps.co failed", e); }
+  } catch {}
 
-  // ✅ Sort by distance proximity + score
-  allResults.forEach(r => {
+  // ============================
+  // 5️⃣ Ranking & filtering
+  // ============================
+  results.forEach(r => {
     const dist = Math.hypot(center.lat - r.lat, center.lng - r.lon);
-    r.rank = r.score - dist * 30; // bias nearby results
+    r.rank = r.score - dist * 50;
   });
-  allResults.sort((a, b) => b.rank - a.rank);
 
-  // Deduplicate by rounded coordinate
+  results.sort((a, b) => b.rank - a.rank);
+
+  // Remove duplicates by coordinate
   const seen = new Set();
-  const unique = allResults.filter(r => {
+  const unique = results.filter(r => {
     const key = `${r.lat.toFixed(3)},${r.lon.toFixed(3)}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
 
-  return unique.slice(0, 10);
+  return unique.slice(0, 12); // limit results
 }
 
 input.oninput = () => {

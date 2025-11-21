@@ -1079,15 +1079,58 @@ function maybeRepeatCurrentStep() {
     speak(reminder, "step", { interrupt: false });
   }
 }
+// 1. HELPER: Calculate distance from car to the route line (in meters)
 function getNearestRouteDistance(latlng, route) {
-    let min = Infinity;
-    for (const step of route.steps) {
-        const d = latlng.distanceTo(L.latLng(step.lat, step.lng));
-        if (d < min) min = d;
+    if (!route || !route.steps || route.steps.length < 2) return 0;
+
+    let minDistance = Infinity;
+
+    // We only check the current step and the next 5 steps for performance
+    // (checking the whole route every second is too heavy)
+    const lookAhead = Math.min(currentStepIndex + 5, route.steps.length - 1);
+    const startIndex = Math.max(0, currentStepIndex - 1);
+
+    for (let i = startIndex; i < lookAhead; i++) {
+        const p1 = L.latLng(route.steps[i].lat, route.steps[i].lng);
+        const p2 = L.latLng(route.steps[i+1].lat, route.steps[i+1].lng);
+        
+        // Project point onto line segment to get distance
+        const dist = distanceToSegment(latlng, p1, p2);
+        if (dist < minDistance) minDistance = dist;
     }
-    return min;
+    return minDistance;
 }
 
+// Math to calculate distance from Point(p) to Segment(a,b)
+function distanceToSegment(p, a, b) {
+    const x = p.lat, y = p.lng;
+    const x1 = a.lat, y1 = a.lng;
+    const x2 = b.lat, y2 = b.lng;
+
+    const A = x - x1;
+    const B = y - y1;
+    const C = x2 - x1;
+    const D = y2 - y1;
+
+    const dot = A * C + B * D;
+    const len_sq = C * C + D * D;
+    let param = -1;
+    if (len_sq !== 0) param = dot / len_sq;
+
+    let xx, yy;
+
+    if (param < 0) {
+        xx = x1; yy = y1;
+    } else if (param > 1) {
+        xx = x2; yy = y2;
+    } else {
+        xx = x1 + param * C;
+        yy = y1 + param * D;
+    }
+
+    // Return distance in meters (approximate conversion)
+    return L.latLng(x, y).distanceTo(L.latLng(xx, yy));
+}
 function triggerReroute(currentLL, route) {
     speak("Recalculating route.", "warning", { interrupt: true });
 
@@ -1119,15 +1162,33 @@ async function adaptiveAIDashboard(latlng, heading) {
 
     // 🆕 LOCATION-FIRST: Check if driver has jumped to a different step
     smartStepAdvancement(latlng);
-    if (activeRouteIndex !== null) {
-    const route = routes[activeRouteIndex];
-    const offDist = getNearestRouteDistance(latlng, route);
-    if (offDist > 20) {
-        console.warn("Off route:", offDist);
-        triggerReroute(latlng, route);
-        return;
+    // 🆕 ROBUST OFF-ROUTE DETECTION
+    if (activeRouteIndex !== null && routes[activeRouteIndex]) {
+        const route = routes[activeRouteIndex];
+        
+        // 1. Calculate distance from the "purple line"
+        const offDist = getNearestRouteDistance(latlng, route);
+        
+        // 2. CONDITIONS FOR REROUTE:
+        // A. Distance is significant (> 40m) to account for GPS inaccuracy
+        // B. Car is moving (> 5 km/h) to prevent rerouting while stopped at traffic lights
+        const isFarOff = offDist > 20; 
+        const isMoving = currentSpeed > 5; 
+
+        if (isFarOff && isMoving) {
+            // Debounce: Don't spam reroute if already calculating
+            if (!route._isRerouting) {
+                route._isRerouting = true;
+                console.warn(`⚠️ Off-route detected: ${offDist.toFixed(1)}m. Recalculating...`);
+                
+                triggerReroute(latlng, route);
+
+                // Prevent another reroute trigger for 10 seconds
+                setTimeout(() => { route._isRerouting = false; }, 10000);
+                return;
+            }
+        }
     }
-  }
     // 🆕 Check for upcoming step announcements
     checkUpcomingSteps(latlng);
 

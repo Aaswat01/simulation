@@ -99,6 +99,7 @@ border:1px solid rgba(255,255,255,0.2);box-shadow:0 0.5vh 1vh rgba(0,0,0,0.4);}
   transition: transform 0.2s ease, background 0.3s ease;
 }
 #locate-btn:hover {background: #4682b4;transform: scale(1.1);}
+
 #map-toggle{position:absolute;top:1vh;right:1vh;z-index:1000;background:#ff8c00;
 border:none;border-radius:1vh;padding:0.5vh 1vw;font-weight:bold;cursor:pointer;color:#000;}
 /* === ROUTE PANEL === */
@@ -378,7 +379,6 @@ align-items:center;color:#fff;font-size:0.9rem;}
 </div>
 
 </div>
-
 <div class="search-row">
   <button id="routePanelBtn"
       style="background:#00b36b;color:#fff;border:none;border-radius:1vh;
@@ -483,6 +483,7 @@ align-items:center;color:#fff;font-size:0.9rem;}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
 <script>
+
 // ==============================
 // LOCATION-FIRST NAVIGATION SYSTEM
 // Priority: Driver's actual location > Pre-planned announcements
@@ -735,15 +736,26 @@ function ecoAdvisor(distAhead, slope){
 }
 // ===== Elevation Fix + Directional Arrows + Turn Signals =====
 async function getElevations(coords) {
-  try {
-    const locations = coords.map(c => `${c.lat},${c.lng}`).join("|");
-    const res = await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${locations}`);
-    const data = await res.json();
-    return data.results.map(r => r.elevation || 0);
-  } catch (err) {
-    console.warn("Elevation fetch failed:", err);
-    return new Array(coords.length).fill(0);
-  }
+    try {
+        const chunkSize = 40;
+        let all = [];
+
+        for (let i = 0; i < coords.length; i += chunkSize) {
+            const chunk = coords.slice(i, i + chunkSize);
+            const list = chunk.map(c => `${c.lat},${c.lng}`).join("|");
+            const url = `https://api.open-elevation.com/api/v1/lookup?locations=${list}`;
+
+            const res = await fetch(url);
+            const data = await res.json();
+
+            all.push(...data.results.map(r => r.elevation ?? 0));
+        }
+
+        return all;
+    } catch (e) {
+        console.warn("Elevation error:", e);
+        return new Array(coords.length).fill(0);
+    }
 }
 
 const ELEVATION_INTERVAL = 50;
@@ -810,27 +822,55 @@ if (navigator.geolocation) {
 }
 
 // === Speed Limit (Overpass API) ============================================================================================================
+let lastSpeedLimit = null;
+let lastSpeedLimitTime = 0;
+
 async function updateSpeedLimit(latlng) {
-  try {
-    const query = `
-      [out:json];
-      way(around:20, ${latlng.lat}, ${latlng.lng})["maxspeed"];
-      out tags;
-    `;
-    const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
-    const res = await fetch(url);
-    const json = await res.json();
-    let limit = "--";
-    if (json.elements && json.elements.length > 0) {
-      const tag = json.elements[0].tags.maxspeed;
-      if (tag) {
-        limit = tag.replace(" mph","");   // remove unwanted units
-      }
+    const now = Date.now();
+
+    if (now - lastSpeedLimitTime < 8000 && lastSpeedLimit !== null) {
+        UI.speedLimitEl.textContent = lastSpeedLimit + " km/h";
+        return;
     }
-    document.getElementById("speedLimit").textContent = limit + " km/h";
-  } catch (err) {
-    document.getElementById("speedLimit").textContent = "-- km/h";
-  }
+
+    lastSpeedLimitTime = now;
+
+    try {
+        const q = `
+        [out:json];
+        way(around:40, ${latlng.lat}, ${latlng.lng})["maxspeed"];
+        out tags;
+        `;
+        const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(q);
+
+        const res = await fetch(url);
+        const data = await res.json();
+
+        let limit = lastSpeedLimit;
+
+        if (data.elements?.length > 0) {
+            const tag = data.elements[0].tags.maxspeed;
+
+            if (tag) {
+                if (tag.includes("mph")) {
+                    limit = Math.round(parseInt(tag) * 1.609);
+                } else {
+                    limit = parseInt(tag);
+                }
+            }
+        }
+
+        if (!limit || isNaN(limit)) {
+            UI.speedLimitEl.textContent = lastSpeedLimit + " km/h";
+            return;
+        }
+
+        lastSpeedLimit = limit;
+        UI.speedLimitEl.textContent = limit + " km/h";
+
+    } catch (e) {
+        UI.speedLimitEl.textContent = lastSpeedLimit + " km/h";
+    }
 }
 
 function maybeSpeakEco(eco) {
@@ -860,21 +900,22 @@ function maybeSpeakEco(eco) {
   }
 }
 
-let driverStats = { overspeed:0, totalPoints:0 };
-let spokeOverspeedOnce = false;
+let lastOverNotice = 0;
 
 function checkWarnings(currentSpeed, eco) {
-  driverStats.totalPoints++;
-  const isOver = currentSpeed > (eco.speed + 10);
-  if (isOver) {
-    driverStats.overspeed++;
-    const text = "Slow down. You are over the recommended speed.";
-    speak(text, "warning", { interrupt:true });
-    spokeOverspeedOnce = true;
-  } else {
-    spokeOverspeedOnce = false;
-  }
+    if (!lastSpeedLimit) return;
+
+    const limit = lastSpeedLimit;
+    const tolerance = 8;
+    const now = Date.now();
+
+    if (currentSpeed <= limit + tolerance) return;
+    if (now - lastOverNotice < 10000) return;
+
+    lastOverNotice = now;
+    speak(`Slow down. Speed limit is ${limit} kilometers per hour.`, "warning", { interrupt: true });
 }
+
 
 // 🆕 Update UI to mark steps
 function updateStepUI(routeIndex, stepIndex, status) {
@@ -1038,6 +1079,24 @@ function maybeRepeatCurrentStep() {
     speak(reminder, "step", { interrupt: false });
   }
 }
+function getNearestRouteDistance(latlng, route) {
+    let min = Infinity;
+    for (const step of route.steps) {
+        const d = latlng.distanceTo(L.latLng(step.lat, step.lng));
+        if (d < min) min = d;
+    }
+    return min;
+}
+
+function triggerReroute(currentLL, route) {
+    speak("Recalculating route.", "warning", { interrupt: true });
+
+    const lastStep = route.steps[route.steps.length - 1];
+    const destLL = L.latLng(lastStep.lat, lastStep.lng);
+
+    cleanupRoute(route);
+    createRoute(currentLL, destLL, "#4DA6FF");
+}
 
 // ===== Main AI loop =====
 async function adaptiveAIDashboard(latlng, heading) {
@@ -1060,7 +1119,15 @@ async function adaptiveAIDashboard(latlng, heading) {
 
     // 🆕 LOCATION-FIRST: Check if driver has jumped to a different step
     smartStepAdvancement(latlng);
-    
+    if (activeRouteIndex !== null) {
+    const route = routes[activeRouteIndex];
+    const offDist = getNearestRouteDistance(latlng, route);
+    if (offDist > 20) {
+        console.warn("Off route:", offDist);
+        triggerReroute(latlng, route);
+        return;
+    }
+  }
     // 🆕 Check for upcoming step announcements
     checkUpcomingSteps(latlng);
 
@@ -1142,48 +1209,158 @@ document.addEventListener("visibilitychange", () => {
 // 🌍 FREE TRANSLATION USING NOMINATIM (English reverse-geocode)
 async function getEnglishName(lat, lon) {
   try {
-    const query = `
-      [out:json];
-      way(around:25, ${lat}, ${lon})["highway"]["name"];
-      out tags center;
-    `;
-
-    const url =
-      "https://overpass-api.de/api/interpreter?data=" +
-      encodeURIComponent(query);
-
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&addressdetails=1&lat=${lat}&lon=${lon}&accept-language=en`;
     const res = await fetch(url);
-    const json = await res.json();
-
-    if (!json.elements || json.elements.length === 0) return null;
-
-    let bestName = null;
-    let bestDist = Infinity;
-
-    json.elements.forEach((el) => {
-      if (!el.tags || !el.tags.name) return;
-
-      // skip garbage numeric names
-      if (/^\d+$/.test(el.tags.name.trim())) return;
-
-      const rLat = el.center.lat;
-      const rLon = el.center.lon;
-
-      const dist = Math.hypot(lat - rLat, lon - rLon);
-
-      if (dist < bestDist) {
-        bestDist = dist;
-        bestName = el.tags.name;
-      }
-    });
-
-    return bestName || null;
-  } catch (err) {
-    console.warn("Overpass road-name error:", err);
+    const data = await res.json();
+    if (!data || !data.address) return null;
+    let road =
+      data.address.road ||
+      data.address.neighbourhood ||
+      data.address.suburb ||
+      data.address.city ||
+      data.address.state;
+    // ❌ Avoid numeric-only roads
+    if (road && /^\d+$/.test(road.trim())) return null;
+    return road;
+  } catch {
     return null;
   }
 }
+// ======================================================
+// SAFE REROUTE ENGINE — preserves route box, index, color
+// ======================================================
+async function safeReroute(route, currentLL) {
+    const routeIndex = route.routeIndex;
 
+    speak("Recalculating route.", "warning", { interrupt: true });
+
+    // 1️⃣ Get destination (last step)
+    const lastStep = route.steps[route.steps.length - 1];
+    const destLL = L.latLng(lastStep.lat, lastStep.lng);
+
+    // 2️⃣ Remove only the OLD line + step layers
+    try { map.removeControl(route.rc); } catch {}
+    try { map.removeLayer(route.group); } catch {}
+
+    // 3️⃣ Create NEW group for rerouted line
+    const newGroup = L.layerGroup().addTo(map);
+    route.group = newGroup; // replace only this route’s group
+
+    // 4️⃣ Generate new route using OSRM
+    const router = L.Routing.osrmv1({
+        serviceUrl: "https://router.project-osrm.org/route/v1"
+    });
+
+    router.route(
+        [{ latLng: currentLL }, { latLng: destLL }],
+        async (err, result) => {
+            if (err || !result || !result[0]) {
+                console.warn("Rerouting failed", err);
+                return;
+            }
+
+            const r = result[0];
+
+            // 5️⃣ Replace route.rc with new control
+            route.rc = L.Routing.control({
+                router,
+                waypoints: [currentLL, destLL],
+                show: false,
+                addWaypoints: false,
+                createMarker: () => null,
+                lineOptions: {
+                    styles: [{
+                        color: route.color,
+                        weight: 5,
+                        opacity: 0.9
+                    }]
+                }
+            }).addTo(map);
+
+            document.querySelectorAll(".leaflet-routing-container")
+                .forEach(x => x.style.display = "none");
+
+            // 6️⃣ Build steps again into SAME box
+            const content = document.querySelector(
+                `#route-box-${routeIndex} .route-content`
+            );
+            const distanceEl = document.getElementById(
+                `route-distance-${routeIndex}`
+            );
+
+            content.innerHTML = "";
+            route.steps = [];
+
+            const coords = r.coordinates.map(c => ({
+                lat: c.lat,
+                lng: c.lng
+            }));
+
+            // elevation
+            const elevs = await getElevations(coords);
+
+            r.instructions.forEach((s, i) => {
+                const idxStart = s.index;
+                const idxEnd =
+                    i + 1 < r.instructions.length
+                        ? r.instructions[i + 1].index
+                        : coords.length;
+
+                const seg = coords
+                    .slice(idxStart, idxEnd)
+                    .map(c => [c.lat, c.lng]);
+
+                const elev = elevs[idxStart] || 0;
+
+                const stepLine = L.polyline(seg, {
+                    color: route.color,
+                    weight: 5,
+                    opacity: 0.8
+                }).addTo(newGroup);
+
+                const item = document.createElement("div");
+                item.className = "route-step";
+                item.innerHTML = `
+                    <b>${s.text}</b>
+                    <div>${(s.distance / 1000).toFixed(2)} km | Elev ${elev.toFixed(1)} m</div>
+                `;
+                content.appendChild(item);
+
+                route.steps.push({
+                    lat: coords[idxStart].lat,
+                    lng: coords[idxStart].lng,
+                    text: s.text,
+                    elev,
+                    element: item,
+                    distance: s.distance,
+                    lineLayer: stepLine,
+                    translated: false
+                });
+            });
+
+            // 7️⃣ Reset state only for this route
+            activeRouteIndex = routeIndex;
+            currentStepIndex = 0;
+            announcedSteps.clear();
+
+            // 8️⃣ Update distance display
+            distanceEl.textContent =
+                `${(r.summary.totalDistance / 1000).toFixed(1)} km remaining`;
+
+            // 9️⃣ Announce first step again
+            if (route.steps[0]) {
+                speak(route.steps[0].text, "step", { interrupt: true });
+            }
+        }
+    );
+}
+
+// ======================================================
+// OVERRIDE OLD REROUTE TRIGGER
+// ======================================================
+function triggerReroute(currentLL, route) {
+    safeReroute(route, currentLL);
+}
 
 // ===== Route creation =====
 async function createRoute(start, end, color, marker = null, index = null) {
@@ -1446,7 +1623,7 @@ async function createRoute(start, end, color, marker = null, index = null) {
           } catch (err) {
             console.warn("Step translation failed:", err);
           }
-        }, j * 500); // stagger to avoid rate-limits
+        }, j * 320); // stagger to avoid rate-limits
       });
     })();
 

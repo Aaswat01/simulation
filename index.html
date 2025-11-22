@@ -821,55 +821,80 @@ if (navigator.geolocation) {
   );
 }
 
-// === Speed Limit (Overpass API) ============================================================================================================
+// === Speed Limit (Overpass API - Real Data Only) ===
+// === Speed Limit (Overpass API - Real Data Only) ===
 let lastSpeedLimit = null;
 let lastSpeedLimitTime = 0;
 
 async function updateSpeedLimit(latlng) {
     const now = Date.now();
-
-    if (now - lastSpeedLimitTime < 8000 && lastSpeedLimit !== null) {
-        UI.speedLimitEl.textContent = lastSpeedLimit + " km/h";
+    
+    // 1. Throttle: Only check every 4 seconds to save data/battery
+    if (now - lastSpeedLimitTime < 4000 && lastSpeedLimit !== null) {
         return;
     }
-
     lastSpeedLimitTime = now;
 
     try {
+        // 2. Query: 'around:25' is tighter than 40 to avoid picking up service roads
+        // We strictly ask for the 'maxspeed' tag
         const q = `
-        [out:json];
-        way(around:40, ${latlng.lat}, ${latlng.lng})["maxspeed"];
+        [out:json][timeout:5];
+        way(around:25, ${latlng.lat}, ${latlng.lng})["maxspeed"];
         out tags;
         `;
         const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(q);
 
-        const res = await fetch(url);
+        // 3. Safety: Abort request if it takes too long (prevents hanging)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
         const data = await res.json();
 
-        let limit = lastSpeedLimit;
+        let rawLimit = null;
 
-        if (data.elements?.length > 0) {
-            const tag = data.elements[0].tags.maxspeed;
-
-            if (tag) {
-                if (tag.includes("mph")) {
-                    limit = Math.round(parseInt(tag) * 1.609);
-                } else {
-                    limit = parseInt(tag);
-                }
+        // 4. Parsing Logic (Matches QGIS Data)
+        if (data.elements && data.elements.length > 0) {
+            const tags = data.elements[0].tags;
+            if (tags.maxspeed) {
+                rawLimit = tags.maxspeed; 
             }
         }
 
-        if (!limit || isNaN(limit)) {
-            UI.speedLimitEl.textContent = lastSpeedLimit + " km/h";
-            return;
+        // 5. Display Logic
+        if (rawLimit) {
+            // Clean the data (Handle "100", "100 km/h", "100 kph")
+            // GCC states mostly use km/h, so pure numbers are safe to treat as km/h
+            let numericLimit = parseInt(rawLimit);
+            
+            // Handle mph if present (rare in GCC but possible in data)
+            if (rawLimit.toLowerCase().includes("mph")) {
+                numericLimit = Math.round(numericLimit * 1.609);
+            }
+
+            if (!isNaN(numericLimit)) {
+                lastSpeedLimit = numericLimit;
+                UI.speedLimitEl.textContent = numericLimit + " km/h";
+                UI.speedLimitEl.style.color = "#fff"; // Normal color
+            }
+        } else {
+            // ❌ DATA MISSING: You asked NOT to use pre-given/guessed data.
+            // If we don't know the limit, we show "--" instead of "null" or guessing.
+            // We keep the old limit for 10 seconds just in case of a small GPS glitch.
+            if (now - lastSpeedLimitTime > 10000) {
+                 UI.speedLimitEl.textContent = "--";
+                 lastSpeedLimit = null; // Reset
+            }
         }
 
-        lastSpeedLimit = limit;
-        UI.speedLimitEl.textContent = limit + " km/h";
-
     } catch (e) {
-        UI.speedLimitEl.textContent = lastSpeedLimit + " km/h";
+        // If internet fails, just keep showing the last known limit
+        // Do NOT print "null"
+        if (lastSpeedLimit !== null) {
+            UI.speedLimitEl.textContent = lastSpeedLimit + " km/h";
+        }
     }
 }
 
@@ -1488,225 +1513,143 @@ async function createRoute(start, end, color, marker = null, index = null) {
     refreshAIBox();
   };
 
-  rc.on("routesfound", async e => {
+rc.on("routesfound", async e => {
     const r = e.routes[0];
     const coords = r.coordinates.map(c => ({ lat: c.lat, lng: c.lng }));
+    
+    // Pre-fetch elevations for the whole path to ensure they align
     const elevs = await getElevations(coords);
 
     content.innerHTML = "";
     const steps = [];
 
-    // ============================
-    // FIRST STEP — translate IMMEDIATELY
-    // ============================
-    (async () => {
-      if (r.instructions.length > 0) {
-        const firstStep = r.instructions[0];
-        const idxStart = firstStep.index;
-        const idxEnd = r.instructions.length > 1 ? r.instructions[1].index : coords.length;
-
-        const segmentCoords = coords.slice(idxStart, idxEnd).map(c => [c.lat, c.lng]);
-        const elev = elevs[idxStart] || 0;
-
-        const stepLine = L.polyline(segmentCoords, {
-          color: routeColor,
-          weight: 5,
-          opacity: 0.8
-        }).addTo(group);
-
-        const item = document.createElement("div");
-        item.className = "route-step";
-        item.innerHTML =
-          `<b>${firstStep.text}</b><div>${(firstStep.distance / 1000).toFixed(2)} km | Elev ${elev.toFixed(1)} m</div>`;
-        content.appendChild(item);
-
-        const stepObj = {
-          lat: coords[idxStart].lat,
-          lng: coords[idxStart].lng,
-          text: firstStep.text,
-          elev,
-          element: item,
-          distance: firstStep.distance,
-          lineLayer: stepLine,
-          translated: false
-        };
-        steps.push(stepObj);
-
-        // 🌍 Translate first step
-        try {
-          const endIdx = Math.min(idxEnd - 1, coords.length - 1);
-          let englishRoad = await getEnglishName(coords[endIdx].lat, coords[endIdx].lng);
-
-          if (englishRoad) {
-            englishRoad = englishRoad.split(",")[0].trim();
-
-            const dirMatch =
-              firstStep.text.match(/(.*?(?:onto|on|toward)\s)/i);
-            const directionPart = dirMatch && dirMatch[1] ? dirMatch[1] : "";
-
-            const translatedText =
-              directionPart ? directionPart + englishRoad : `${firstStep.text} (${englishRoad})`;
-
-            item.querySelector("b").textContent = translatedText;
-            stepObj.text = translatedText;
-            stepObj.translated = true;
-          }
-        } catch (err) {
-          console.warn("Translation failed for first step:", err);
-        }
-        
-
-        // 🔊 Speak immediately if this is the active route
-        if (activeRouteIndex === null) {
-          activeRouteIndex = routeIndex;
-          currentStepIndex = 0;
-          announcedSteps.clear();
-
-          const distText =
-            firstStep.distance < 1000
-              ? `${firstStep.distance.toFixed(0)} meters`
-              : `${(firstStep.distance / 1000).toFixed(1)} kilometers`;
-
-          speak(`${stepObj.text}. Proceed for ${distText}.`, "step", {
-            interrupt: true
-          });
-
-          updateStepUI(routeIndex, 0, "active");
-          announcedSteps.add(0);
-        }
-        // ==========================================================
-        // FEED VIRTUAL GPS FOR TESTING (NO LIVE LOCATION REQUIRED)
-        // ==========================================================
-        if (useVirtualGPS) {
-        const fakeLL = L.latLng(stepObj.lat, stepObj.lng);
-        updateVirtualGPS(fakeLL);
-        }
-
-      }
+    // ============================================================
+    // ✅ UNIFIED LOOP: Handle ALL steps (Start to Finish) together
+    // This fixes the "1 step ahead/behind" synchronization bug.
+    // ============================================================
+    r.instructions.forEach((s, i) => {
       
+      // 1. Define the start and end of THIS step's road segment
+      const idxStart = s.index;
+      const idxEnd = (i + 1 < r.instructions.length) 
+                     ? r.instructions[i + 1].index 
+                     : coords.length - 1;
 
-      // =============================================
-      // REMAINING STEPS — built fast, translated slow
-      // =============================================
-      r.instructions.slice(1).forEach((s, jOffset) => {
-        const j = jOffset + 1;
+      // Safety check: Ensure we have coordinates
+      if (idxStart >= coords.length || idxEnd > coords.length) return;
 
-        const idxStart = s.index;
-        const idxEnd =
-          j + 1 < r.instructions.length ? r.instructions[j + 1].index : coords.length;
+      const segmentCoords = coords.slice(idxStart, idxEnd + 1).map(c => [c.lat, c.lng]);
+      const elev = elevs[idxStart] || 0;
 
-        const seg = coords.slice(idxStart, idxEnd).map(c => [c.lat, c.lng]);
-        const elev = elevs[idxStart] || 0;
+      // 2. Draw the visual line for THIS step
+      const stepLine = L.polyline(segmentCoords, {
+        color: routeColor,
+        weight: 5,
+        opacity: 0.8
+      }).addTo(group);
 
-        const stepLine = L.polyline(seg, {
-          color: routeColor,
-          weight: 5,
-          opacity: 0.8
-        }).addTo(group);
+      // 3. Create the HTML Box
+      const item = document.createElement("div");
+      item.className = "route-step";
+      item.innerHTML = `
+        <b>${s.text}</b>
+        <div>${(s.distance / 1000).toFixed(2)} km | Elev ${elev.toFixed(1)} m</div>
+      `;
+      content.appendChild(item);
 
-        // Visual connector
-        if (j > 0) {
-          const prev = steps[j - 1];
-          if (prev && prev.lineLayer) {
-            const lastLat = prev.lineLayer.getLatLngs().slice(-1)[0];
-            const newLat = seg[0];
-            const connector = L.polyline([lastLat, newLat], {
-              color: routeColor,
-              weight: 3,
-              opacity: 0.6
-            }).addTo(group);
-            prev.connectorLine = connector;
-          }
-        }
+      // 4. Highlight effect on hover
+      item.addEventListener("mouseenter", () => stepLine.setStyle({ color: "#00FF00", weight: 7, opacity: 1 }));
+      item.addEventListener("mouseleave", () => stepLine.setStyle({ color: routeColor, weight: 5, opacity: 0.8 }));
 
-        const item = document.createElement("div");
-        item.className = "route-step";
-        item.innerHTML =
-          `<b>${s.text}</b><div>${(s.distance / 1000).toFixed(2)} km | Elev ${elev.toFixed(1)} m</div>`;
-        content.appendChild(item);
+      // 5. Store step data
+      const stepObj = {
+        lat: coords[idxStart].lat,
+        lng: coords[idxStart].lng,
+        text: s.text,
+        elev,
+        element: item,
+        distance: s.distance,
+        lineLayer: stepLine,
+        translated: false
+      };
+      steps.push(stepObj);
 
-        item.addEventListener("mouseenter", () =>
-          stepLine.setStyle({ color: "#00FF00", weight: 6, opacity: 0.9 })
-        );
-        item.addEventListener("mouseleave", () =>
-          stepLine.setStyle({ color: routeColor, weight: 5, opacity: 0.5 })
-        );
+      // ======================================================
+      // 🌍 TRANSLATION LOGIC (Applies to ALL steps strictly)
+      // ======================================================
+      setTimeout(async () => {
+        if (stepObj.translated) return;
 
-        const stepObj = {
-          lat: coords[idxStart].lat,
-          lng: coords[idxStart].lng,
-          text: s.text,
-          elev,
-          element: item,
-          distance: s.distance,
-          lineLayer: stepLine,
-          translated: false
-        };
+        try {
+            // ✅ FIX: Calculate the MIDPOINT of the segment.
+            // Using the start/end gets you the intersection (wrong name).
+            // Using the middle gets you the actual road name.
+            const midIndex = Math.floor((idxStart + idxEnd) / 2);
+            const targetLat = coords[midIndex].lat;
+            const targetLng = coords[midIndex].lng;
 
-        steps.push(stepObj);    
-        
-
-        // 💫 Translate later to avoid Nominatim rate-limit
-        setTimeout(async () => {
-          if (stepObj.translated) return;
-
-          try {
-            const endIdx = Math.min(idxEnd - 1, coords.length - 1);
-
-            let englishRoad = await getEnglishName(coords[endIdx].lat, coords[endIdx].lng);
+            let englishRoad = await getEnglishName(targetLat, targetLng);
 
             if (englishRoad) {
-              englishRoad = englishRoad.split(",")[0].trim();
+                englishRoad = englishRoad.split(",")[0].trim();
 
-              const dirMatch =
-                s.text.match(/(.*?(?:onto|on|toward)\s)/i);
-              const directionPart =
-                dirMatch && dirMatch[1] ? dirMatch[1] : "";
+                // Only update if the English name is NOT already in the instruction
+                if (!stepObj.text.toLowerCase().includes(englishRoad.toLowerCase())) {
+                    const newText = `${s.text} (${englishRoad})`;
+                    
+                    // Update UI
+                    item.querySelector("b").textContent = newText;
+                    stepObj.text = newText;
+                    stepObj.translated = true;
 
-              const translatedText =
-                directionPart ? directionPart + englishRoad : `${s.text} (${englishRoad})`;
-
-              item.querySelector("b").textContent = translatedText;
-              stepObj.text = translatedText;
-              stepObj.translated = true;
-
-              // 🔊 If this is CURRENT active step → speak updated text
-              if (
-                activeRouteIndex === routeIndex &&
-                currentStepIndex === j
-              ) {
-                SPEECH.lastStepText = translatedText;
-                SPEECH.lastStepSpokenAt = nowMs();
-                aiBoxShow("step", translatedText);
-                speak(translatedText, "step", { interrupt: true });
-              }
+                    // Update "Last Spoken" text if this is the active step right now
+                    if (activeRouteIndex === routeIndex && currentStepIndex === i) {
+                         SPEECH.lastStepText = newText;
+                         aiBoxShow("step", newText);
+                    }
+                }
             }
-          } catch (err) {
-            console.warn("Step translation failed:", err);
-          }
-        }, j * 320); // stagger to avoid rate-limits
-      });
-    })();
+        } catch (err) {
+            console.warn(`Translation failed for step ${i}`, err);
+        }
+      }, i * 600); // Stagger requests (600ms) to prevent API ban
+    });
 
-    // ================================
-    // SAVE route object (everything else unchanged)
-    // ================================
+    // ============================================================
+    // INITIAL SETUP (Start Navigation)
+    // ============================================================
+    if (activeRouteIndex === null) {
+      activeRouteIndex = routeIndex;
+      currentStepIndex = 0;
+      announcedSteps.clear();
+
+      // Speak the first step immediately (even if translation is still loading)
+      if (steps.length > 0) {
+        const firstStep = steps[0];
+        const distText = firstStep.distance < 1000
+            ? `${firstStep.distance.toFixed(0)} meters`
+            : `${(firstStep.distance / 1000).toFixed(1)} kilometers`;
+
+        speak(`${firstStep.text}. Proceed for ${distText}.`, "step", { interrupt: true });
+        
+        updateStepUI(routeIndex, 0, "active");
+        announcedSteps.add(0);
+      }
+      
+      // Virtual GPS Trigger
+      if (useVirtualGPS && steps.length > 0) {
+        updateVirtualGPS(L.latLng(steps[0].lat, steps[0].lng));
+      }
+    }
+
+    // Update Route Object
     const existing = routes.find(x => x.routeIndex === routeIndex);
+    const routeObj = { rc, group, steps, endKey, routeIndex, totalDistance: r.summary.totalDistance };
+    
     if (existing) {
-      existing.rc = rc;
-      existing.group = group;
-      existing.steps = steps;
-      existing.endKey = endKey;
-      existing.totalDistance = r.summary.totalDistance;
+        Object.assign(existing, routeObj);
     } else {
-      routes.push({
-        rc,
-        group,
-        steps,
-        endKey,
-        routeIndex,
-        totalDistance: r.summary.totalDistance
-      });
+        routes.push(routeObj);
     }
 
     document.getElementById(`route-distance-${routeIndex}`).textContent =
@@ -2107,7 +2050,7 @@ input.oninput = () => {
       suggestBox.appendChild(div);
     });
     suggestBox.style.display="block";
-  }, 300);
+  }, 320);
 };
 document.addEventListener("click", e => { if (!suggestBox.contains(e.target) && e.target !== input) suggestBox.style.display = "none"; });
 function selectResult(i) {

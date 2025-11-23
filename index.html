@@ -828,76 +828,128 @@ let lastSpeedLimitTime = 0;
 
 async function updateSpeedLimit(latlng) {
     const now = Date.now();
-    
-    // 1. Throttle: Only check every 4 seconds to save data/battery
-    if (now - lastSpeedLimitTime < 4000 && lastSpeedLimit !== null) {
+
+    // Throttle: check only every 4 seconds
+    if (now - lastSpeedLimitTime < 4000) {
+        if (lastSpeedLimit !== null) {
+            UI.speedLimitEl.textContent = lastSpeedLimit + " km/h";
+        }
         return;
     }
     lastSpeedLimitTime = now;
 
     try {
-        // 2. Query: 'around:25' is tighter than 40 to avoid picking up service roads
-        // We strictly ask for the 'maxspeed' tag
+        // Full key scan (not only maxspeed)
         const q = `
         [out:json][timeout:5];
-        way(around:25, ${latlng.lat}, ${latlng.lng})["maxspeed"];
+        way(around:35, ${latlng.lat}, ${latlng.lng})[
+            maxspeed
+            | maxspeed:forward
+            | maxspeed:backward
+            | maxspeed:lanes
+            | maxspeed:advisory
+            | maxspeed:practical
+            | source:maxspeed
+            | maxspeed:type
+        ];
         out tags;
         `;
         const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(q);
 
-        // 3. Safety: Abort request if it takes too long (prevents hanging)
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 3000);
 
         const res = await fetch(url, { signal: controller.signal });
         clearTimeout(timeoutId);
+
         const data = await res.json();
+        if (!data.elements || !data.elements.length) {
+            UI.speedLimitEl.textContent = "--";
+            lastSpeedLimit = null;
+            return;
+        }
 
-        let rawLimit = null;
+        const tags = data.elements[0].tags;
+        let extracted = null;
 
-        // 4. Parsing Logic (Matches QGIS Data)
-        if (data.elements && data.elements.length > 0) {
-            const tags = data.elements[0].tags;
-            if (tags.maxspeed) {
-                rawLimit = tags.maxspeed; 
+        // PRIORITY ORDER — safest first
+        const keys = [
+            "maxspeed",
+            "maxspeed:forward",
+            "maxspeed:backward",
+            "maxspeed:practical",
+            "maxspeed:advisory",
+            "maxspeed:lanes"
+        ];
+
+        for (const k of keys) {
+            if (tags[k]) {
+                extracted = tags[k];
+                break;
             }
         }
 
-        // 5. Display Logic
-        if (rawLimit) {
-            // Clean the data (Handle "100", "100 km/h", "100 kph")
-            // GCC states mostly use km/h, so pure numbers are safe to treat as km/h
-            let numericLimit = parseInt(rawLimit);
-            
-            // Handle mph if present (rare in GCC but possible in data)
-            if (rawLimit.toLowerCase().includes("mph")) {
-                numericLimit = Math.round(numericLimit * 1.609);
-            }
-
-            if (!isNaN(numericLimit)) {
-                lastSpeedLimit = numericLimit;
-                UI.speedLimitEl.textContent = numericLimit + " km/h";
-                UI.speedLimitEl.style.color = "#fff"; // Normal color
-            }
-        } else {
-            // ❌ DATA MISSING: You asked NOT to use pre-given/guessed data.
-            // If we don't know the limit, we show "--" instead of "null" or guessing.
-            // We keep the old limit for 10 seconds just in case of a small GPS glitch.
-            if (now - lastSpeedLimitTime > 10000) {
-                 UI.speedLimitEl.textContent = "--";
-                 lastSpeedLimit = null; // Reset
-            }
+        // No usable value
+        if (!extracted) {
+            UI.speedLimitEl.textContent = "--";
+            lastSpeedLimit = null;
+            return;
         }
 
-    } catch (e) {
-        // If internet fails, just keep showing the last known limit
-        // Do NOT print "null"
+        // Lane format: "80|80|60"
+        if (extracted.includes("|")) {
+            extracted = extracted.split("|")[0];        // Use first lane only
+        }
+
+        // Clean spaces
+        extracted = extracted.trim().toLowerCase();
+
+        // Reject invalid-type values (as per your instruction: no pre-set data)
+        const rejectList = ["signals", "none", "unposted", "variable", "national", "default", "implicit"];
+        if (rejectList.some(bad => extracted.includes(bad))) {
+            UI.speedLimitEl.textContent = "--";
+            lastSpeedLimit = null;
+            return;
+        }
+
+        // Extract numeric
+        let numeric = parseInt(extracted);
+        if (isNaN(numeric)) {
+            UI.speedLimitEl.textContent = "--";
+            lastSpeedLimit = null;
+            return;
+        }
+
+        // Detect mph (multiple formats)
+        const isMPH =
+            extracted.includes("mph") ||
+            extracted.includes("mi/h") ||
+            /mph$/.test(extracted);
+
+        if (isMPH) {
+            numeric = Math.round(numeric * 1.60934);  // mph → km/h
+        }
+
+        // Reject insane values
+        if (numeric < 5 || numeric > 180) {
+            UI.speedLimitEl.textContent = "--";
+            lastSpeedLimit = null;
+            return;
+        }
+
+        // SUCCESS — Show km/h
+        lastSpeedLimit = numeric;
+        UI.speedLimitEl.textContent = numeric + " km/h";
+        UI.speedLimitEl.style.color = "#fff";
+
+    } catch (err) {
+        console.warn("Speed limit fetch failed:", err);
+        // Keep last known value
         if (lastSpeedLimit !== null) {
             UI.speedLimitEl.textContent = lastSpeedLimit + " km/h";
         }
     }
 }
-
 function maybeSpeakEco(eco) {
   const t = nowMs();
   const bucket = slopeBucket(eco.slope);
@@ -1104,6 +1156,55 @@ function maybeRepeatCurrentStep() {
     speak(reminder, "step", { interrupt: false });
   }
 }
+
+// 🔄 AUTO-REPEAT EVERY 10 SECONDS WHEN TAB IS ACTIVE
+// 🔄 REPEAT BOTH STEP + ECO EVERY 40 SECONDS
+function autoRepeatSpeech() {
+    const now = nowMs();
+
+    // Do NOT repeat during warning
+    if (now < SPEECH.warningActiveUntil) return;
+
+    // If navigating
+    if (activeRouteIndex !== null && routes[activeRouteIndex]) {
+        const route = routes[activeRouteIndex];
+        if (route.steps && route.steps[currentStepIndex]) {
+
+            const step = route.steps[currentStepIndex];
+            const timeSinceStep = now - SPEECH.lastStepSpokenAt;
+
+            // 40 sec repeat for step + eco
+            if (timeSinceStep > 40000) {
+
+                const distText =
+                    step.distance < 1000
+                        ? `${step.distance.toFixed(0)} meters`
+                        : `${(step.distance / 1000).toFixed(1)} kilometers`;
+
+                // 🟢 Speak Step First
+                speak(`${step.text}. Proceed for ${distText}.`, "step", { interrupt: false });
+
+                // 🕒 Wait 1 second then speak ECO Tip
+                setTimeout(() => {
+                    if (SPEECH.lastEcoText) {
+                        speak(SPEECH.lastEcoText, "eco", { interrupt: false });
+                    }
+                }, 1000);
+            }
+
+            return;
+        }
+    }
+
+    // If NOT navigating → just repeat eco every 40s
+    if (SPEECH.lastEcoText && (now - SPEECH.lastEcoSpokenAt > 40000)) {
+        speak(SPEECH.lastEcoText, "eco", { interrupt: false });
+    }
+}
+
+// Repeat every 10 seconds
+setInterval(autoRepeatSpeech, 40000);
+
 // 1. HELPER: Calculate distance from car to the route line (in meters)
 function getNearestRouteDistance(latlng, route) {
     if (!route || !route.steps || route.steps.length < 2) return 0;
@@ -1197,8 +1298,7 @@ async function adaptiveAIDashboard(latlng, heading) {
         // 2. CONDITIONS FOR REROUTE:
         // A. Distance is significant (> 40m) to account for GPS inaccuracy
         // B. Car is moving (> 5 km/h) to prevent rerouting while stopped at traffic lights
-        const isFarOff = offDist > 20; 
-        const isMoving = currentSpeed > 5; 
+        const isFarOff = offDist > 20;  
 
         if (isFarOff && isMoving) {
             // Debounce: Don't spam reroute if already calculating
@@ -1365,6 +1465,17 @@ async function safeReroute(route, currentLL) {
 
             document.querySelectorAll(".leaflet-routing-container")
                 .forEach(x => x.style.display = "none");
+            // DRAW NEW VISIBLE ROUTE LINE 100% ALWAYS
+            if (r && r.coordinates) {
+                const coordsList = r.coordinates.map(c => [c.lat, c.lng]);
+
+                // store fresh polyline
+                route.polyline = L.polyline(coordsList, {
+                    color: route.color,
+                    weight: 6,
+                    opacity: 0.9
+                }).addTo(route.group);
+            }
 
             // 6️⃣ Build steps again into SAME box
             const content = document.querySelector(
@@ -1606,13 +1717,15 @@ rc.on("routesfound", async e => {
                     if (activeRouteIndex === routeIndex && currentStepIndex === i) {
                          SPEECH.lastStepText = newText;
                          aiBoxShow("step", newText);
+                         // 🟢 NEW: Speak the corrected/translated step text
+                         speak(newText, "step", { interrupt: true });
                     }
                 }
             }
         } catch (err) {
             console.warn(`Translation failed for step ${i}`, err);
         }
-      }, i * 600); // Stagger requests (600ms) to prevent API ban
+      }, i * 300); // Stagger requests (600ms) to prevent API ban
     });
 
     // ============================================================
@@ -2083,3 +2196,4 @@ micBtn.onclick = async () => {
 </script>
 </body>
 </html>
+

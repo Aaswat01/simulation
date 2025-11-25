@@ -1298,8 +1298,9 @@ async function adaptiveAIDashboard(latlng, heading) {
         // 2. CONDITIONS FOR REROUTE:
         // A. Distance is significant (> 40m) to account for GPS inaccuracy
         // B. Car is moving (> 5 km/h) to prevent rerouting while stopped at traffic lights
-        const isFarOff = offDist > 20;  
-
+        const isFarOff = offDist > 20;
+        // REQUIRED FIX
+        const isMoving = currentSpeed > 3;
         if (isFarOff && isMoving) {
             // Debounce: Don't spam reroute if already calculating
             if (!route._isRerouting) {

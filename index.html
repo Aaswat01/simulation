@@ -366,7 +366,72 @@ align-items:center;color:#fff;font-size:0.9rem;}
 .gm-suggest-box.universal-suggest-box {
     width: 29%;        /* 29% width only for GM panel */
 }
+.number-pin-icon {
+  background: #ffcc00;
+  color: black;
+  font-weight: bold;
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border: 2px solid black;
+  font-size: 14px;
+}
+/* === Popup Image Styling === */
+.popup-img-box {
+  width: 100%;
+  height: 120px;
+  background-color: #2a2a2a;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+}
 
+.popup-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* Ensures image fills box without stretching */
+  display: none;     /* Hidden until loaded */
+}
+
+.popup-placeholder {
+  color: #888;
+  font-size: 0.8rem;
+  position: absolute;
+}
+
+/* === Modern Pin Styling === */
+.modern-pin {
+  background: linear-gradient(135deg, #ff5f6d 0%, #ffc371 100%);
+  width: 36px;
+  height: 36px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border: 2px solid #fff;
+  box-shadow: 3px 3px 10px rgba(0,0,0,0.5);
+  transition: transform 0.2s ease;
+}
+
+.modern-pin:hover {
+  transform: rotate(-45deg) scale(1.15);
+  z-index: 1000 !important;
+}
+
+.modern-pin span {
+  transform: rotate(45deg); /* Counter-rotate number */
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+}
 </style>
 </head>
 <body>
@@ -540,6 +605,8 @@ let ECO_START_BLOCK = Date.now() + 3000;
 let currentRoadType = "city";
 let lastSlope = 0;
 let gmSearchRequestId = 0;
+// === Search Result Pins ===
+let searchResultPins = [];
 
 // 🆕 Track which steps have been announced to avoid repeating
 let announcedSteps = new Set();
@@ -686,14 +753,18 @@ async function openPreviewTo(latlng, label, addTempMarker = true) {
 
 approvalStartBtn.addEventListener("click", () => {
   if (!preview.active || !preview.end) return;
+  
+  // ✅ FIX: Clear search pins when navigation actually starts
+  clearSearchPins();
+  
   const start = userMarker ? userMarker.getLatLng() : map.getCenter();
   if (!waypoints.length) waypoints.push(start); else waypoints[0] = start;
-  // 🆕 Add popup marker for confirmed destination
+  
   const destMarker = L.marker(preview.end)
     .bindPopup(`<b>Destination Confirmed:</b><br>${preview.destLabel}`)
     .addTo(map)
     .openPopup();
-  // 🆕 Speak confirmation again once approved
+    
   waypointMarkers.push(destMarker); waypoints.push(preview.end);
   const endLL = preview.end; clearPreview();
   createRoute(waypoints[waypoints.length - 2], endLL, colors[routes.length % colors.length], destMarker);
@@ -1298,9 +1369,8 @@ async function adaptiveAIDashboard(latlng, heading) {
         // 2. CONDITIONS FOR REROUTE:
         // A. Distance is significant (> 40m) to account for GPS inaccuracy
         // B. Car is moving (> 5 km/h) to prevent rerouting while stopped at traffic lights
-        const isFarOff = offDist > 20;
-        // REQUIRED FIX
-        const isMoving = currentSpeed > 3;
+        const isFarOff = offDist > 20;  
+
         if (isFarOff && isMoving) {
             // Debounce: Don't spam reroute if already calculating
             if (!route._isRerouting) {
@@ -1844,6 +1914,12 @@ const input = document.getElementById("searchInput");
 const suggestBox = document.getElementById("suggestBox");
 let results = []; let searchTimer = null;
 
+function clearSearchPins() {
+    searchResultPins.forEach(m => {
+        try { map.removeLayer(m); } catch {}
+    });
+    searchResultPins = [];
+}
 
 // Convert text to coordinates using search engine
 async function geocodeTextToLatLng(text) {
@@ -2064,7 +2140,32 @@ gmStartBtn.onclick = async () => {
   if (lastWp) map.flyTo(lastWp, 14, { animate: true, duration: 0.9 });
 };
 
+// === Image Fetcher Helper ===
+async function fetchLocationImage(query) {
+    try {
+        // 1. Search Wikipedia for the article title
+        const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*`;
+        const searchRes = await fetch(searchUrl).then(r => r.json());
+        
+        if (!searchRes.query || !searchRes.query.search.length) return null;
+        
+        const title = searchRes.query.search[0].title;
 
+        // 2. Get the thumbnail for that article
+        const imgUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}&prop=pageimages&format=json&pithumbsize=400&origin=*`;
+        const imgRes = await fetch(imgUrl).then(r => r.json());
+        
+        const pages = imgRes.query.pages;
+        const pageId = Object.keys(pages)[0];
+        
+        if (pages[pageId] && pages[pageId].thumbnail) {
+            return pages[pageId].thumbnail.source;
+        }
+    } catch (e) {
+        console.warn("Image fetch failed", e);
+    }
+    return null;
+}
 // === Improved Intelligent Search Engine ===
 async function getSearchResults(query) {
   const center = userMarker ? userMarker.getLatLng() : map.getCenter();
@@ -2148,37 +2249,138 @@ async function getSearchResults(query) {
 }
 
 input.oninput = () => {
-  const q = input.value.trim(); if (searchTimer) clearTimeout(searchTimer);
-  if (!q) return (suggestBox.style.display = "none");
+  const q = input.value.trim(); 
+  if (searchTimer) clearTimeout(searchTimer);
+  
+  // ✅ FIX: Explicitly clear pins if input is empty
+  if (!q) { 
+      suggestBox.style.display = "none"; 
+      clearSearchPins(); 
+      return; 
+  }
+
   searchTimer = setTimeout(async () => {
-    const data = await getSearchResults(q); results = data; suggestBox.innerHTML = "";
-    if (!data.length) { suggestBox.style.display = "none"; return; }
+    const data = await getSearchResults(q); 
+    results = data; 
+    suggestBox.innerHTML = "";
+    
+    if (!data.length) { 
+        suggestBox.style.display = "none"; 
+        clearSearchPins(); // Clear if no results found
+        return; 
+    }
+    
+    // Show new pins
+    showSearchPins(data);
+    
     data.forEach((f, i) => {
       const div = document.createElement("div");
       div.className = "universal-suggest-item";
-      div.innerHTML = `
-        <b>${f.name}</b>
-        <div class="subtext">${f.display_name}</div>
-      `;
+      div.innerHTML = `<b>${i + 1}. ${f.name}</b><div class="subtext">${f.display_name}</div>`;
       div.onclick = () => selectResult(i);
       suggestBox.appendChild(div);
     });
     suggestBox.style.display="block";
-  }, 320);
+  }, 300); // Increased slightly to 300ms to reduce API spam
 };
+input.addEventListener("input", () => {
+    if (input.value.trim() === "") {
+        clearSearchPins();
+        suggestBox.style.display = "none";
+    }
+});
+
+// === Updated Pin Display with Images ===
+function showSearchPins(list) {
+    clearSearchPins(); // Ensure old pins are gone
+
+    list.forEach((item, index) => {
+        // 1. Create the Modern Pin Icon
+        const icon = L.divIcon({
+            className: "custom-div-icon", 
+            html: `<div class="modern-pin"><span>${index + 1}</span></div>`,
+            iconSize: [40, 40],
+            iconAnchor: [20, 40], 
+            popupAnchor: [0, -35]
+        });
+
+        const pin = L.marker([item.lat, item.lon], { icon }).addTo(map);
+
+        // 2. Create Popup Content as a DOM element
+        // This allows us to modify the image source asynchronously
+        const container = document.createElement("div");
+        container.style.width = "220px";
+        container.style.fontFamily = "Segoe UI, sans-serif";
+        
+        container.innerHTML = `
+            <div class="popup-img-box">
+                <span class="popup-placeholder">Loading image...</span>
+                <img class="popup-img" id="popup-img-${index}" alt="Location" />
+            </div>
+            <div style="font-size:16px;font-weight:bold;color:#ffcc00;margin-bottom:4px;">
+                ${index + 1}. ${item.name}
+            </div>
+            <div style="font-size:12px;opacity:0.9;color:#ddd;margin-bottom:10px;line-height:1.4;">
+                ${item.display_name}
+            </div>
+            <button id="btn-nav-${index}" style="
+                width:100%; padding:8px; background:#1e90ff; color:#fff;
+                border:none; border-radius:6px; font-weight:bold; cursor:pointer;
+                transition: background 0.2s;">
+                Navigate Here
+            </button>
+        `;
+
+        // 3. Handle Navigation Click
+        const btn = container.querySelector(`#btn-nav-${index}`);
+        btn.onclick = () => {
+            openPreviewTo({lat: item.lat, lng: item.lon}, item.name, true);
+        };
+
+        // 4. Bind Popup
+        pin.bindPopup(container);
+
+        // 5. Fetch Image (Async)
+        fetchLocationImage(item.name).then(imgUrl => {
+            const imgEl = container.querySelector(`#popup-img-${index}`);
+            const placeholder = container.querySelector(".popup-placeholder");
+            const box = container.querySelector(".popup-img-box");
+            
+            if (imgUrl && imgEl) {
+                imgEl.src = imgUrl;
+                imgEl.onload = () => {
+                    imgEl.style.display = "block";
+                    if(placeholder) placeholder.style.display = "none";
+                };
+            } else {
+                // If no image found, hide the image box to save space
+                if(box) box.style.display = "none";
+            }
+        });
+
+        searchResultPins.push(pin);
+    });
+
+    if (searchResultPins.length > 0) {
+        const group = L.featureGroup(searchResultPins);
+        map.fitBounds(group.getBounds().pad(0.2));
+    }
+}
 document.addEventListener("click", e => { if (!suggestBox.contains(e.target) && e.target !== input) suggestBox.style.display = "none"; });
 function selectResult(i) {
-  const f = results[i];
-  if (!f) return;
-  // Put selected result into main search bar
-  input.value = f.name;
-  // Hide suggestion dropdown
-  suggestBox.style.display = "none";
-  // Continue your existing logic
-  const latlng = L.latLng(f.lat, f.lon);
-  openPreviewTo(latlng, f.name, true);
-  // Optional: center map on location
-  map.flyTo(latlng, 16, { animate: true, duration: 1.2 });
+    const f = results[i];
+    if (!f) return;
+
+    input.value = f.name;
+    suggestBox.style.display = "none";
+
+    clearSearchPins(); // NEW: remove search pins
+
+    const latlng = L.latLng(f.lat, f.lon);
+    openPreviewTo(latlng, f.name, true);
+
+    map.flyTo(latlng, 16, { animate: true, duration: 1 });
+
 }
 
 
@@ -2197,4 +2399,3 @@ micBtn.onclick = async () => {
 </script>
 </body>
 </html>
-

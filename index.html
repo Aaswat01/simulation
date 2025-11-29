@@ -17,31 +17,45 @@ height:100vh;display:flex;flex-direction:column;overflow:hidden;
 .ai-tip-box{flex:0 0 auto;background:#ffa500;color:#000;border-radius:1vh;
 margin:1vh 2vw;padding:1.5vh 1vw;text-align:center;font-weight:bold;
 font-size:clamp(1rem,2vw,1.6rem);box-shadow:0 0.5vh 1vh rgba(0,0,0,0.4);}
-.stats-row{display:flex;justify-content:space-evenly;align-items:stretch;
-flex-wrap:wrap;gap:1vh;margin:0 1vw;}
-.stat-card{flex:1;min-width:120px;max-width:180px;background:rgba(28,34,48,0.95);
-border-radius:1vh;padding:1vh;display:flex;flex-direction:column;justify-content:center;
-align-items:center;text-align:center;border:1px solid rgba(255,255,255,0.2);
-box-shadow:0 0.3vh 1vh rgba(0,0,0,0.4);}
+.stats-row {display: grid;grid-template-columns: repeat(4, 1fr);gap: 8px;padding: 10px 14px;width: 100%;}
+@media (max-width: 480px) {
+  .stats-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.stat-card {background: rgba(28,34,48,0.95);border-radius: 10px;padding: 10px;text-align: center;border: 1px solid rgba(255,255,255,0.2);}
 .stat-label{font-size:0.9rem;opacity:0.8;}
 .stat-value{font-size:1.3rem;font-weight:bold;margin-top:0.3rem;}
 .speed-box{background:#4e79a7;}
 .gear-box{background:#76b7b2;color:#000;}
 .throttle-box{background:#2ca02c;color:#000;}
 /* === SEARCH === */
-.search-row {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: absolute;
-    top: 140px;
-    left: 46%;
-    transform: translateX(-50%);
-    width: 92%;
-    z-index: 3000;
+#searchContainer {
+  position:absolute;
+  top: 14px;
+  left:43%;
+  transform:translateX(-50%);
+  width: min(82vw, 520px);
+  padding: 10px 16px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  background: #ffffffdd;
+  backdrop-filter: blur(12px);
+  border-radius: 50px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.3);
+  z-index:5000;
 }
-#searchInput{flex:1;max-width:70%;padding:0.8vh 1vw;font-size:1rem;border-radius:1vh;
-border:none;outline:none;}
+#searchInput {
+  flex: 1;
+  border:none;
+  background: transparent;
+  font-size: 1.1rem;
+  outline:none;
+}
+.leaflet-control-zoom {
+  display: none !important;
+}
 #micBtn{background:#ff4c4c;color:#fff;border:none;border-radius:1vh;padding:0.8vh 1.2vw;
 font-weight:bold;cursor:pointer;box-shadow:0 0.4vh 1vh rgba(0,0,0,0.3);}
 /* === Suggestion Box Modern UI === */
@@ -54,7 +68,7 @@ font-weight:bold;cursor:pointer;box-shadow:0 0.4vh 1vh rgba(0,0,0,0.3);}
   background: rgba(22, 26, 38, 0.96);
   border: 1px solid rgba(255,255,255,0.12);
   border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  box-shadow: 0 8px 24px rgba(255, 255, 255, 0.5);
   backdrop-filter: blur(8px);
   z-index: 2000;
   overflow: hidden;
@@ -83,30 +97,23 @@ font-weight:bold;cursor:pointer;box-shadow:0 0.4vh 1vh rgba(0,0,0,0.3);}
   font-size: 0.8rem;
 }
 /* === MAIN (Map now fills space) === */
-.main-section{flex:1;display:flex;flex-direction:column;gap:1vh;padding:0 2vw 1vh;}
+.main-section{flex:1;display:flex;flex-direction:column;gap:1vh;padding:0 1vw 1vh;}
 .map-container {
-  flex: 1;
-  position: relative;
-  border-radius: 1vh;
-  overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.2);
-  box-shadow: 0 0.5vh 1vh rgba(0,0,0,0.4);
-
-  /* 🆕 Add spacing so it's not touching data boxes */
-  margin-top: 20px;
-
-  height: calc(100vh - 220px); 
+  position:relative;
+  flex:1;
+  border-radius:16px;
+  overflow:hidden;
 }
 
 .map{width:100%;height:100%;}
 /* === Locate (Target) Button === */
 #locate-btn {
   position: absolute;
-  bottom: 2vh;
+  bottom: 13vh;
   right: 1vh;
   z-index: 1000;
-  background: #1e90ff;
-  color: #fff;
+  background: #08ee55;
+  color: #e61111;
   border: none;
   border-radius: 50%;
   width: 42px;
@@ -466,37 +473,6 @@ align-items:center;color:#fff;font-size:0.9rem;}
 </div>
 
 </div>
-<div class="search-row">
-  <button id="routePanelBtn"
-      style="background:#00b36b;color:#fff;border:none;border-radius:1vh;
-      padding:0.8vh 1vw;font-weight:bold;font-size:1.2rem;cursor:pointer;">
-      ＋
-  </button>
-
-  <input type="text" id="searchInput" placeholder="Search destination...">
-  <button id="micBtn">🎤</button>
-  <button id="mapSelectBtn" 
-  style="background:#ffcc00;color:#000;border:none;border-radius:1vh;
-  padding:0.8vh 1.2vw;font-weight:bold;cursor:pointer;box-shadow:0 0.4vh 1vh rgba(0,0,0,0.3);"> Select
-  </button>
-  <button id="clearSearchBtn" 
-  style="
-    position: absolute; 
-    right: 17.5vw; 
-    background: transparent; 
-    border: none; 
-    font-size: 1.2rem; 
-    cursor: pointer; 
-    display: none; 
-    color:#888;
-  ">
-  ✖
-  </button>
-
-  <!-- MOVE SUGGESTION BOX OUTSIDE -->
-  <div id="suggestBox" class="universal-suggest-box"></div>
-</div>
-
 <!-- ✅ FIXED: PANEL MOVED OUTSIDE SEARCH ROW -->
 <div id="slideRoutePanel">
   <div class="panel-inner">
@@ -562,24 +538,53 @@ align-items:center;color:#fff;font-size:0.9rem;}
 
 <div class="main-section">
   <div class="map-container">
+    <div id="searchContainer" class="search-row">
+      <button id="routePanelBtn"
+          style="background:#00b36b;color:#fff;border:none;border-radius:1vh;
+          padding:0.8vh 1vw;font-weight:bold;font-size:1.2rem;cursor:pointer;">
+          ＋
+      </button>
+      <input type="text" id="searchInput" placeholder="Search destination...">
+      <button id="micBtn">🎤</button>
+      <button id="mapSelectBtn" 
+      style="background:#ffcc00;color:#000;border:none;border-radius:1vh;
+      padding:0.8vh 1.2vw;font-weight:bold;cursor:pointer;box-shadow:0 0.4vh 1vh rgba(0,0,0,0.3);"> Select
+      </button>
+      <button id="clearSearchBtn" 
+      style="
+        position: absolute; 
+        right: 24.5vw; 
+        background: transparent; 
+        border: none; 
+        font-size: 1.5rem; 
+        cursor: pointer; 
+        display: none; 
+        color:#888;
+      ">
+      ✖
+      </button>
+      <!-- MOVE SUGGESTION BOX OUTSIDE -->
+      <div id="suggestBox" class="universal-suggest-box"></div>
+    </div>
     <div id="map" class="map"></div>
     <button id="map-toggle">Full Map</button>
     <button id="locate-btn" title="Recenter to my location">🎯</button>
     <button id="compass-btn" style="
-    position:absolute;
-    top:8vh;
-    right:1vh;
-    z-index:2000;
-    background:#1e90ff;
-    color:white;
-    border:none;
-    border-radius:50%;
-    width:42px;
-    height:42px;
-    font-size:1.2rem;
-    font-weight:bold;
-    cursor:pointer;
-    box-shadow:0 0.4vh 1vh rgba(0,0,0,0.4);
+      position: absolute;
+      top: 35px;
+      right: 15px;
+      z-index: 3000;
+      background:#1e90ff;
+      color:white;
+      border:none;
+      border-radius:50%;
+      width:42px;
+      height:42px;
+      font-size:1.2rem;
+      font-weight:bold;
+      cursor:pointer;
+      box-shadow:0 0.4vh 1vh rgba(0,0,0,0.4);
+      transition: 0.2s;
     ">🧭</button>
 
     <div id="routePanel"></div>
@@ -636,7 +641,7 @@ const osmMap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
 googleMap.addTo(map);
 L.control.layers(
   { "🗺️ English Map": englishMap, "🌍 Google Map": googleMap, "🗺️ Map": osmMap },
-  null, { position: "topright", collapsed: true }
+  null, { position: "bottomright", collapsed: true }
 ).addTo(map);
 
 const carIcon = L.divIcon({
@@ -826,7 +831,12 @@ async function openPreviewTo(latlng, label, addTempMarker = true) {
 
 approvalStartBtn.addEventListener("click", () => {
   if (!preview.active || !preview.end) return;
-  
+  // 🆕 Enable auto-rotation toward route when navigation begins
+  autoRotation = true;
+  follow = true;
+  lastUserInteraction = Date.now();
+
+  // 🆕 Enable auto-rotation toward route when navigation begins    
   // ✅ FIX: Clear search pins when navigation actually starts
   clearSearchPins();
   
@@ -952,12 +962,21 @@ map.on("dragstart zoomstart rotatestart touchstart", () => {
 });
 
 // Resume rotation after 2s if user stops interacting
+// 🆕 Resume follow ONLY if 1 minute passes without interaction
 map.on("dragend zoomend rotateend", () => {
-    setTimeout(() => {
+    lastUserInteraction = Date.now();
+});
+
+setInterval(() => {
+    if (!follow && (Date.now() - lastUserInteraction > 60000)) { 
         follow = true;
         autoRotation = true;
-    }, 2000);
-});
+
+        if (userMarker) {
+            map.panTo(userMarker.getLatLng(), { animate:true });
+        }
+    }
+}, 3000);
 
 // Modify GPS watcher to detect permission denial
 if (navigator.geolocation){
@@ -981,9 +1000,13 @@ if (navigator.geolocation){
       userMarker.setLatLng(latlng);
     }
 
-    if (autoFollow) {
-      map.setView(latlng, map.getZoom(), { animate:false });
-      map.setBearing(heading, { animate:true, duration:350 });
+    // 🆕 Only follow when follow mode is active
+    if (follow) {
+        map.panTo(latlng, { animate: true });
+
+        if (autoRotation) {
+            map.setBearing(heading, { animate: true, duration: 300 });
+        }
     }
 
     await adaptiveAIDashboard(latlng, heading);
@@ -2015,7 +2038,7 @@ document.getElementById("map-toggle").addEventListener("click",()=>{
   if(!mapFull){
     mapContainer.style.position="fixed"; mapContainer.style.top="0"; mapContainer.style.left="0";
     mapContainer.style.width="100vw"; mapContainer.style.height="100vh"; mapContainer.style.zIndex="2000";
-    button.innerText="Restore Map"; mapFull=true; setTimeout(()=>map.invalidateSize(),300);
+    button.innerText="Restore"; mapFull=true; setTimeout(()=>map.invalidateSize(),300);
   }else{
     mapContainer.style.position=""; mapContainer.style.width=""; mapContainer.style.height=""; mapContainer.style.zIndex="";
     button.innerText="Full Map"; mapFull=false; setTimeout(()=>map.invalidateSize(),300);

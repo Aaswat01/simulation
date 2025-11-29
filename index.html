@@ -29,7 +29,17 @@ box-shadow:0 0.3vh 1vh rgba(0,0,0,0.4);}
 .gear-box{background:#76b7b2;color:#000;}
 .throttle-box{background:#2ca02c;color:#000;}
 /* === SEARCH === */
-.search-row{display:flex;align-items:center;justify-content:center;gap:1vw;margin:1vh 2vw;position:relative;overflow: visible !important; }
+.search-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 140px;
+    left: 46%;
+    transform: translateX(-50%);
+    width: 92%;
+    z-index: 3000;
+}
 #searchInput{flex:1;max-width:70%;padding:0.8vh 1vw;font-size:1rem;border-radius:1vh;
 border:none;outline:none;}
 #micBtn{background:#ff4c4c;color:#fff;border:none;border-radius:1vh;padding:0.8vh 1.2vw;
@@ -37,7 +47,7 @@ font-weight:bold;cursor:pointer;box-shadow:0 0.4vh 1vh rgba(0,0,0,0.3);}
 /* === Suggestion Box Modern UI === */
 #suggestBox {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 5px);
   left: 50%;
   transform: translateX(-50%);
   width: 90%;
@@ -74,8 +84,20 @@ font-weight:bold;cursor:pointer;box-shadow:0 0.4vh 1vh rgba(0,0,0,0.3);}
 }
 /* === MAIN (Map now fills space) === */
 .main-section{flex:1;display:flex;flex-direction:column;gap:1vh;padding:0 2vw 1vh;}
-.map-container{flex:1;position:relative;border-radius:1vh;overflow:hidden;
-border:1px solid rgba(255,255,255,0.2);box-shadow:0 0.5vh 1vh rgba(0,0,0,0.4);}
+.map-container {
+  flex: 1;
+  position: relative;
+  border-radius: 1vh;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.2);
+  box-shadow: 0 0.5vh 1vh rgba(0,0,0,0.4);
+
+  /* 🆕 Add spacing so it's not touching data boxes */
+  margin-top: 20px;
+
+  height: calc(100vh - 220px); 
+}
+
 .map{width:100%;height:100%;}
 /* === Locate (Target) Button === */
 #locate-btn {
@@ -453,6 +475,24 @@ align-items:center;color:#fff;font-size:0.9rem;}
 
   <input type="text" id="searchInput" placeholder="Search destination...">
   <button id="micBtn">🎤</button>
+  <button id="mapSelectBtn" 
+  style="background:#ffcc00;color:#000;border:none;border-radius:1vh;
+  padding:0.8vh 1.2vw;font-weight:bold;cursor:pointer;box-shadow:0 0.4vh 1vh rgba(0,0,0,0.3);"> Select
+  </button>
+  <button id="clearSearchBtn" 
+  style="
+    position: absolute; 
+    right: 17.5vw; 
+    background: transparent; 
+    border: none; 
+    font-size: 1.2rem; 
+    cursor: pointer; 
+    display: none; 
+    color:#888;
+  ">
+  ✖
+  </button>
+
   <!-- MOVE SUGGESTION BOX OUTSIDE -->
   <div id="suggestBox" class="universal-suggest-box"></div>
 </div>
@@ -525,6 +565,23 @@ align-items:center;color:#fff;font-size:0.9rem;}
     <div id="map" class="map"></div>
     <button id="map-toggle">Full Map</button>
     <button id="locate-btn" title="Recenter to my location">🎯</button>
+    <button id="compass-btn" style="
+    position:absolute;
+    top:8vh;
+    right:1vh;
+    z-index:2000;
+    background:#1e90ff;
+    color:white;
+    border:none;
+    border-radius:50%;
+    width:42px;
+    height:42px;
+    font-size:1.2rem;
+    font-weight:bold;
+    cursor:pointer;
+    box-shadow:0 0.4vh 1vh rgba(0,0,0,0.4);
+    ">🧭</button>
+
     <div id="routePanel"></div>
     <div id="approvalPanel" aria-live="polite">
       <div class="approval-row">
@@ -545,7 +602,8 @@ align-items:center;color:#fff;font-size:0.9rem;}
     </div>
   </div>
 </div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet-src.js"></script>
+<script src="leaflet-rotate-src.js"></script>
 <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
 <script>
 
@@ -553,21 +611,17 @@ align-items:center;color:#fff;font-size:0.9rem;}
 // LOCATION-FIRST NAVIGATION SYSTEM
 // Priority: Driver's actual location > Pre-planned announcements
 // ==============================
+const map = L.map('map', {
+    center: [20.5937, 78.9629],
+    zoom: 18,
+    rotate: true,
+    touchRotate: true,
+    compassBearing: false, 
+    rotateControl: true,
+    inertia: true
+});
 
-let currentMapRotation = 0;
-function rotateMap(angle) {
-  currentMapRotation = angle;
-  const mapPane = map.getPane('mapPane');
-  if (mapPane) {
-    mapPane.style.transform = `rotate(${angle}deg)`;
-    mapPane.style.transformOrigin = "center center";
-  }
-  const controlPane = map.getPane('controlPane');
-  if (controlPane) controlPane.style.transform = `rotate(${-angle}deg)`;
-}
-
-const map = L.map('map').setView([0, 0], 2);
-let autoFollow = true;
+let autoCenter = true;
 
 const englishMap = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
   attribution: '&copy; OpenStreetMap contributors | © CartoDB',
@@ -597,8 +651,28 @@ document.getElementById("routePanelBtn").onclick = () => {
 };
 
 let userMarker = null, waypoints = [], waypointMarkers = [], routes = [];
-const colors = ['#FF6B6B','#4DA6FF','#FFD93D','#6BCB77','#FF8C00','#9B59B6','#00BFA5'];
+// === MAP CLICK MODE CONTROL ===
+let mapClickEnabled = false;
 
+const mapSelectBtn = document.getElementById("mapSelectBtn");
+
+mapSelectBtn.onclick = () => {
+    mapClickEnabled = !mapClickEnabled;
+
+    if (mapClickEnabled) {
+        mapSelectBtn.style.background = "#00b36b";
+        mapSelectBtn.style.color = "#fff";
+        mapSelectBtn.textContent = "✔ Tap";
+    } else {
+        mapSelectBtn.style.background = "#ffcc00";
+        mapSelectBtn.style.color = "#000";
+        mapSelectBtn.textContent = "Select";
+    }
+};
+
+const colors = ['#FF6B6B','#4DA6FF','#FFD93D','#6BCB77','#FF8C00','#9B59B6','#00BFA5'];
+let lastManualRotation = 0;
+let manualRotationTimeout = 4000; // auto resume after 4s if user isn't touching map
 let activeRouteIndex = null;
 let currentStepIndex = 0;
 let ECO_START_BLOCK = Date.now() + 3000;
@@ -607,7 +681,6 @@ let lastSlope = 0;
 let gmSearchRequestId = 0;
 // === Search Result Pins ===
 let searchResultPins = [];
-
 // 🆕 Track which steps have been announced to avoid repeating
 let announcedSteps = new Set();
 
@@ -867,31 +940,59 @@ function updateVirtualGPS(latlng) {
   adaptiveAIDashboard(latlng, 0);
   updateSpeedLimit(latlng);
 }
+/* ---------------- ROTATION CONTROL ---------------- */
+let follow = true;
+let autoRotation = true;
+let lastHeading = 0;
+
+// Stop auto rotate when user moves map
+map.on("dragstart zoomstart rotatestart touchstart", () => {
+    follow = false;
+    autoRotation = false;
+});
+
+// Resume rotation after 2s if user stops interacting
+map.on("dragend zoomend rotateend", () => {
+    setTimeout(() => {
+        follow = true;
+        autoRotation = true;
+    }, 2000);
+});
 
 // Modify GPS watcher to detect permission denial
-if (navigator.geolocation) {
-  navigator.geolocation.watchPosition(
-    async pos => {
-      useVirtualGPS = false; // real GPS working
-      const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
-      updateSpeedLimit(latlng);
-      adaptiveAIDashboard(latlng, pos.coords.heading || 0);
+if (navigator.geolocation){
+  navigator.geolocation.watchPosition(async pos=>{
+    const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+    updateSpeedLimit(latlng);
 
-      if (!userMarker) {
-        userMarker = L.marker(latlng, { icon: carIcon }).addTo(map);
-        map.setView(latlng, 18);
-      } else {
-        userMarker.setLatLng(latlng);
-      }
-    },
-    err => {
-      console.warn("GPS disabled, switching to virtual GPS.");
-      useVirtualGPS = true;
-    },
-    { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
-  );
+    const currentSpeed = calculateGPSSpeed(latlng);
+    let heading = pos.coords.heading;
+
+    const MIN_SPEED_FOR_HEADING = 5/3.6;
+    if (heading == null || currentSpeed < MIN_SPEED_FOR_HEADING) {
+      heading = lastHeading || 0;
+    }
+    lastHeading = heading;
+
+    if(!userMarker){
+      userMarker = L.marker(latlng,{icon:carIcon}).addTo(map);
+      map.setView(latlng, 19);
+    } else {
+      userMarker.setLatLng(latlng);
+    }
+
+    if (autoFollow) {
+      map.setView(latlng, map.getZoom(), { animate:false });
+      map.setBearing(heading, { animate:true, duration:350 });
+    }
+
+    await adaptiveAIDashboard(latlng, heading);
+    smartStepAdvancement(latlng);
+    checkUpcomingSteps(latlng);
+    maybeRepeatCurrentStep();
+
+  }, console.warn, { enableHighAccuracy:true, maximumAge:1000, timeout:5000 });
 }
-
 // === Speed Limit (Overpass API - Real Data Only) ===
 // === Speed Limit (Overpass API - Real Data Only) ===
 let lastSpeedLimit = null;
@@ -1416,20 +1517,30 @@ if (navigator.geolocation){
       } else heading = 0;
     }
     if(!waypoints.length) waypoints.push(latlng); else waypoints[0]=latlng;
-    if(!userMarker){ userMarker = L.marker(latlng,{icon:carIcon}).addTo(map); map.setView(latlng,22); }
-    else { userMarker.setLatLng(latlng); }
-
-    if (autoFollow) {
-      map.setView(latlng, map.getZoom(), { animate:false });
-      rotateMap(-heading);
+    // Always update marker position
+    if (!userMarker) {
+        userMarker = L.marker(latlng, { icon: carIcon }).addTo(map);
     } else {
-      const drift = window._lastCenter ? latlng.distanceTo(window._lastCenter) : 0;
-      if (drift > 30) map.panTo(latlng, { animate:true, duration:0.6 });
-      window._lastCenter = latlng;
+        userMarker.setLatLng(latlng);
     }
 
-    const carEl = document.getElementById('user-car-svg');
-    if (carEl) carEl.style.transform = `rotate(${heading}deg)`;
+    // Auto-center only if enabled
+    if (autoCenter) {
+        map.panTo(latlng, { animate: true });
+    }
+
+    // Auto resume rotation if user stopped interacting
+    if (!autoRotation && Date.now() - lastManualRotation > manualRotationTimeout && currentSpeed > 3) {
+        autoRotation = true;
+    }
+    const compassBtn = document.getElementById("compass-btn");
+
+    compassBtn.onclick = () => {
+        autoRotation = true;
+        rotateMap(0); // Reset to north
+        compassBtn.style.background = "#00b300";
+        setTimeout(() => compassBtn.style.background = "#1e90ff", 600);
+    };
 
     await adaptiveAIDashboard(latlng, heading);
   }, ()=>console.warn("GPS unavailable"), { enableHighAccuracy:true, maximumAge:1000, timeout:5000 });
@@ -1462,7 +1573,12 @@ document.addEventListener("visibilitychange", () => {
     speak(SPEECH.lastEcoText, "eco", { interrupt:true });
   }, 250);
 });
-
+// 🟢 Add THIS right after the existing one:
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && userMarker && autoCenter) {
+        map.panTo(userMarker.getLatLng(), { animate: true });
+    }
+});
 // 🌍 FREE TRANSLATION USING NOMINATIM (English reverse-geocode)
 async function getEnglishName(lat, lon) {
   try {
@@ -1843,6 +1959,14 @@ rc.on("routesfound", async e => {
 }
 
 map.on('click', e => {
+  if (!mapClickEnabled) return; // << prevent accidental taps unless button activated
+  mapClickEnabled = false;
+
+  // Reset button UI once clicked
+  mapSelectBtn.style.background = "#ffcc00";
+  mapSelectBtn.style.color = "#000";
+  mapSelectBtn.textContent = "🖱 ";
+
   const latlng = e.latlng;
   let startPoint = null;
   if (routes.length > 0) {
@@ -1897,18 +2021,17 @@ document.getElementById("map-toggle").addEventListener("click",()=>{
     button.innerText="Full Map"; mapFull=false; setTimeout(()=>map.invalidateSize(),300);
   }
 });
-map.on('dragstart zoomstart', () => { autoFollow = false; });
-
-const locateBtn = document.getElementById("locate-btn");
-locateBtn.addEventListener("click", () => {
-  if (!userMarker) { alert("User location not available yet!"); return; }
-  autoFollow = !autoFollow;
-  const userPos = userMarker.getLatLng(); map.setView(userPos, 19, { animate: true });
-  locateBtn.style.transform = "scale(0.9)"; setTimeout(() => locateBtn.style.transform = "scale(1)", 150);
-  if (autoFollow) { locateBtn.style.background = "#00b300"; locateBtn.title = "Following car (tap to stop)"; }
-  else { locateBtn.style.background = "#1e90ff"; locateBtn.title = "Recenter to my location"; }
-});
-
+document.getElementById("locate-btn").onclick = () => {
+    follow = true;
+    if (userMarker) {
+        map.panTo(userMarker.getLatLng(), { animate:true });
+    }
+};
+document.getElementById("compass-btn").onclick = () => {
+    autoRotation = true;
+    follow = true;
+    map.setBearing(0, { animate:true, duration:300 });
+};
 // ===== Search =====
 const input = document.getElementById("searchInput");
 const suggestBox = document.getElementById("suggestBox");
@@ -2166,86 +2289,96 @@ async function fetchLocationImage(query) {
     }
     return null;
 }
-// === Improved Intelligent Search Engine ===
+// === HELPER: Calculate Real Earth Distance (Haversine) ===
+function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+  var R = 6371; // Radius of the earth in km
+  var dLat = deg2rad(lat2 - lat1);
+  var dLon = deg2rad(lon2 - lon1);
+  var a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function deg2rad(deg) {
+  return deg * (Math.PI / 180);
+}
+
 async function getSearchResults(query) {
-  const center = userMarker ? userMarker.getLatLng() : map.getCenter();
-  const lang = driverCountry ? driverCountry.toLowerCase() : "en";
-  const latlngMatch = query.match(/^([-]?[0-9]+\.[0-9]+)[,\s]+([-]?[0-9]+\.[0-9]+)$/);
 
-  // ✅ Coordinate Input (latitude, longitude)
-  if (latlngMatch) {
-    const lat = parseFloat(latlngMatch[1]), lon = parseFloat(latlngMatch[2]);
-    return [{
-      name: `Pinned Location (${lat.toFixed(4)}, ${lon.toFixed(4)})`,
-      display_name: "Manual coordinates input",
-      lat, lon, score: 200
-    }];
-  }
+    const center = userMarker ? userMarker.getLatLng() : map.getCenter();
+    const encoded = encodeURIComponent(query);
 
-  const allResults = [];
-  const encode = encodeURIComponent(query);
+    const SEARCH_RADIUS_KM = 50;   // max allowed radius
+    const RESULT_LIMIT = 15;
 
-  // ✅ Photon (fast, local-biased)
-  try {
-    const photon = await fetch(`https://photon.komoot.io/api/?q=${encode}&lat=${center.lat}&lon=${center.lng}&limit=6&lang=${lang}`);
-    const j = await photon.json();
-    if (j.features) {
-      j.features.forEach(f => {
-        const p = f.properties;
-        allResults.push({
-          name: p.name || p.street || p.locality || p.city || "Unnamed",
-          display_name: [p.name, p.city, p.state, p.country].filter(Boolean).join(", "),
-          lat: f.geometry.coordinates[1],
-          lon: f.geometry.coordinates[0],
-          score: 100
+    let results = [];
+
+    // ---- SOURCE 1: Photon (Proximity sorted automatically) ----
+    try {
+        const url = `https://photon.komoot.io/api/?q=${encoded}&lat=${center.lat}&lon=${center.lng}&limit=20`;
+        const res = await fetch(url);
+        const json = await res.json();
+
+        json.features?.forEach(f => {
+            results.push({
+                name: f.properties.name || "",
+                display_name: f.properties.name + ", " + (f.properties.city || "") + ", " + (f.properties.country || ""),
+                lat: f.geometry.coordinates[1],
+                lon: f.geometry.coordinates[0],
+                distanceKm: getDistanceFromLatLonInKm(center.lat, center.lng, f.geometry.coordinates[1], f.geometry.coordinates[0])
+            });
         });
-      });
+    } catch {}
+
+    // ---- SOURCE 2: Nominatim (backup) ----
+    try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encoded}&limit=20&accept-language=en`;
+        const res = await fetch(url);
+        const json = await res.json();
+
+        json.forEach(f => {
+            results.push({
+                name: f.display_name.split(",")[0],
+                display_name: f.display_name,
+                lat: parseFloat(f.lat),
+                lon: parseFloat(f.lon),
+                distanceKm: getDistanceFromLatLonInKm(center.lat, center.lng, parseFloat(f.lat), parseFloat(f.lon))
+            });
+        });
+    } catch {}
+
+    // --- DEDUPLICATE BASED ON COORDS ---
+    const seen = new Set();
+    results = results.filter(r => {
+        const key = `${r.lat.toFixed(4)},${r.lon.toFixed(4)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+
+    // --- HARD FILTER: ONLY NEAR RESULTS ---
+    results = results.filter(r => r.distanceKm <= SEARCH_RADIUS_KM);
+
+    // If NOTHING within radius → fallback to nearest 5 (NOT global)
+    if (results.length === 0) {
+        results = results.sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 5);
     }
-  } catch (e) { console.warn("Photon failed", e); }
 
-  // ✅ Nominatim (global accuracy)
-  try {
-    const nom = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encode}&limit=6&addressdetails=1&accept-language=${lang}&bounded=1&viewbox=${center.lng-1},${center.lat+1},${center.lng+1},${center.lat-1}`);
-    const ndata = await nom.json();
-    ndata.forEach(f => allResults.push({
-      name: f.display_name.split(",")[0],
-      display_name: f.display_name,
-      lat: parseFloat(f.lat),
-      lon: parseFloat(f.lon),
-      score: 80
-    }));
-  } catch (e) { console.warn("Nominatim failed", e); }
+    // --- SORT STRICTLY BY NEAREST DISTANCE ---
+    results.sort((a, b) => a.distanceKm - b.distanceKm);
 
-  // ✅ Maps.co backup (broad but less localized)
-  try {
-    const gr = await fetch(`https://geocode.maps.co/search?q=${encode}`);
-    const gd = await gr.json();
-    gd.forEach(f => allResults.push({
-      name: f.display_name.split(",")[0],
-      display_name: f.display_name,
-      lat: parseFloat(f.lat),
-      lon: parseFloat(f.lon),
-      score: 60
-    }));
-  } catch (e) { console.warn("Maps.co failed", e); }
+    return results.slice(0, RESULT_LIMIT);
+}
 
-  // ✅ Sort by distance proximity + score
-  allResults.forEach(r => {
-    const dist = Math.hypot(center.lat - r.lat, center.lng - r.lon);
-    r.rank = r.score - dist * 30; // bias nearby results
-  });
-  allResults.sort((a, b) => b.rank - a.rank);
-
-  // Deduplicate by rounded coordinate
-  const seen = new Set();
-  const unique = allResults.filter(r => {
-    const key = `${r.lat.toFixed(3)},${r.lon.toFixed(3)}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-
-  return unique.slice(0, 10);
+// Fuzzy matching scorer
+function matchSimilarity(text, input) {
+    text = text.toLowerCase();
+    input = input.toLowerCase();
+    if (text.includes(input)) return 100;
+    return Math.max(0, 100 - Math.abs(text.length - input.length) * 4);
 }
 
 input.oninput = () => {
@@ -2283,12 +2416,20 @@ input.oninput = () => {
     suggestBox.style.display="block";
   }, 300); // Increased slightly to 300ms to reduce API spam
 };
+const clearBtn = document.getElementById("clearSearchBtn");
+
+// Show or hide the X button based on user typing
 input.addEventListener("input", () => {
-    if (input.value.trim() === "") {
-        clearSearchPins();
-        suggestBox.style.display = "none";
-    }
+    clearBtn.style.display = input.value.trim() ? "block" : "none";
 });
+
+// Clicking X clears everything cleanly
+clearBtn.onclick = () => {
+    input.value = "";
+    clearBtn.style.display = "none";
+    suggestBox.style.display = "none";
+    clearSearchPins();
+};
 
 // === Updated Pin Display with Images ===
 function showSearchPins(list) {

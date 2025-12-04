@@ -115,14 +115,13 @@ font-weight:bold;cursor:pointer;box-shadow:0 0.4vh 1vh rgba(0,0,0,0.3);}
 /* === MAIN (Map now fills space) === */
 .main-section{flex:1;display:fixed;flex-direction:column;padding:0 1vw 1vh;}
 .map-container {
-  position:relative;
-  flex:1;
-  overflow:hidden;
-  border-radius: 10px;
-  height: calc(100vh - 110px);
+  position: relative;
+  width: 100%;
+  height: 100vh; /* Full height */
+  padding-bottom: 90px; /* leave space for UI controls */
+  box-sizing: border-box;
 }
-
-.map{width:100%;height:100%;}
+.map{width:100%;height:90%;}
 /* === Locate (Target) Button === */
 #locate-btn {
   position: absolute;
@@ -150,18 +149,30 @@ font-weight:bold;cursor:pointer;box-shadow:0 0.4vh 1vh rgba(0,0,0,0.3);}
 #map-toggle{position:absolute;top:10vh;right:32vh;z-index:1000;background:#ff8c00 ;
 border:none;border-radius:1vh;padding:0.4vh 5vw;font-weight:bold;cursor:pointer;color:#000;pointer-events: auto;}
 /* === ROUTE PANEL === */
-#routePanel{position:absolute;bottom:2vh;left:2vw;width:270px;max-height:42vh;
-overflow-y:auto;background:rgba(0,0,0,0.6);border-radius:1vh;padding:0.5vh;color:#fff;z-index:999;}
+#routePanel {
+  position: absolute;
+  bottom: 20vh; /* lifted above bottom UI elements */
+  left: 2vw;
+  width: 270px;
+  max-height: 48vh; /* more height and scrollable */
+  overflow-y: auto;
+  background: rgba(0,0,0,0.7);
+  border-radius: 12px;
+  padding: 8px;
+  color: #fff;
+  z-index: 9999;
+  transition: bottom .3s ease;
+}
+
 .route-box{margin-bottom:0.8vh;border-radius:1vh;overflow:hidden;background:rgba(255,255,255,0.05);backdrop-filter:blur(6px);box-shadow:0 0.4vh 1vh rgba(0,0,0,0.5);}
 .route-header{padding:0.6vh 0.6vw;font-weight:bold;display:flex;justify-content:space-between;
 align-items:center;color:#fff;font-size:0.9rem;}
-.route-content{background:rgba(255,255,255,0.1);padding:0.4vh 0.6vw;font-size:0.85rem;max-height:30vh;overflow-y:auto;transition:all 0.3s ease;}
+.route-content{background:rgba(255,255,255,0.1);padding:0.4vh 0.6vw;font-size:0.85rem;max-height:100vh;overflow-y:auto;transition:all 0.3s ease;}
 .route-step{padding:0.4vh 0.3vw;margin-bottom:0.4vh;border-bottom:1px solid rgba(255,255,255,0.1);transition:all 0.3s ease;}
 .route-step:hover{background:rgba(255,255,255,0.15);}
 .route-step.completed{display:none;} /* 🆕 HIDE completed steps */
 .route-step.active{background:rgba(255,215,0,0.3);font-weight:bold;border-left:3px solid gold;}
 .route-step.upcoming{opacity:0.7;}
-
 /* Car Icon Style */
 .user-car-icon {
     width: 32px;
@@ -176,22 +187,28 @@ align-items:center;color:#fff;font-size:0.9rem;}
     transform: rotate(0deg) !important;
 }
 /* === Slide-up Approval Panel === */
-#approvalPanel{
-  position:absolute;
-  left:50%;
-  bottom:1.5vh;
-  transform:translate(-50%, 130%);
-  width:min(92vw,460px);
-  background:rgba(20,24,36,0.96);
-  border:1px solid rgba(255,255,255,0.15);
-  border-radius:14px;
-  box-shadow:0 0.8vh 2vh rgba(0,0,0,0.5);
-  padding:12px 14px;
-  z-index:1100;
-  transition:transform .28s ease;
-  backdrop-filter:blur(6px);
+#approvalPanel {
+  position: absolute;
+  left: 50%;
+  bottom: 160px; /* <-- moves it up above bottom bar */
+  transform: translateX(-50%) translateY(60px);
+  width: min(92vw, 460px);
+  background: rgba(20,24,36,0.96);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 14px;
+  box-shadow: 0 8px 25px rgba(0,0,0,0.5);
+  padding: 14px;
+  z-index: 6000;
+  transition: all 0.28s ease;
+  opacity: 0;
+  pointer-events: none;
 }
-#approvalPanel.show{ transform:translate(-50%, 0); }
+
+#approvalPanel.show {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
 
 .approval-row{ display:flex; gap:10px; align-items:center; }
 .approval-icon{
@@ -660,7 +677,6 @@ L.control.layers(
   { "🗺️ English Map": englishMap, "🌍 Google Map": googleMap, "🗺️ Map": osmMap },
   null, { position: "bottomright", collapsed: true }
 ).addTo(map);
-
 
 const carIcon=L.icon({iconUrl:'https://cdn-icons-png.flaticon.com/512/3097/3097144.png',iconSize:[42,42]});
 const slidePanel = document.getElementById("slideRoutePanel");
@@ -1554,6 +1570,20 @@ if (navigator.geolocation){
     } else {
         userMarker.setLatLng(latlng);
     }
+    // AUTO FOLLOW AND ROTATE BASED ON HEADING
+    const speedThreshold = 4; // km/h
+
+    if (pos.coords.speed * 3.6 > speedThreshold) {
+        // Real heading from GPS if available
+        if (heading !== null && heading !== 0) {
+            autoRotation = true;
+            map.setBearing(heading, { animate: true, duration: 400 });
+
+            // Rotate car marker to match heading
+            const carSvg = document.getElementById("user-car-svg");
+            if (carSvg) carSvg.style.transform = `rotate(${heading}deg)`;
+        }
+    }
 
     // Auto-center only if enabled
     if (autoCenter) {
@@ -1564,15 +1594,23 @@ if (navigator.geolocation){
     if (!autoRotation && Date.now() - lastManualRotation > manualRotationTimeout && currentSpeed > 3) {
         autoRotation = true;
     }
-    const compassBtn = document.getElementById("compass-btn");
+    document.getElementById("compass-btn").onclick = () => {
+        autoRotation = false;
+        follow = true; 
+        autoCenter = true;
 
-    compassBtn.onclick = () => {
-        autoRotation = true;
-        rotateMap(0); // Reset to north
-        compassBtn.style.background = "#00b300";
-        setTimeout(() => compassBtn.style.background = "#1e90ff", 600);
+        // Reset map rotation
+        map.setBearing(0, { animate: true, duration: 400 });
+
+        // Reset car icon rotation
+        const carEl = document.getElementById("user-car-svg");
+        if (carEl) carEl.style.transform = "rotate(0deg)";
+
+        // Visual feedback
+        const btn = document.getElementById("compass-btn");
+        btn.style.background = "#00b36b";
+        setTimeout(() => btn.style.background = "#ff1212", 500);
     };
-
     await adaptiveAIDashboard(latlng, heading);
   }, ()=>console.warn("GPS unavailable"), { enableHighAccuracy:true, maximumAge:1000, timeout:5000 });
 }

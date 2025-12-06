@@ -737,7 +737,7 @@ let gmSearchRequestId = 0;
 let searchResultPins = [];
 // 🆕 Track which steps have been announced to avoid repeating
 let announcedSteps = new Set();
-
+let compassMode = 0;
 const UI = {
   aiBox: document.getElementById("ai-tip"),
   speedEl: document.getElementById("speed"),
@@ -1001,7 +1001,16 @@ function updateVirtualGPS(latlng) {
 }
 /* ---------------- ROTATION CONTROL ---------------- */
 let follow = true;
-let autoRotation = false;  // rotation OFF by default
+// === NEW ROTATION STATE CONTROL ===
+let mapRotationMode = "north"; 
+// "north" = always North facing
+// "heading" = rotate with car direction
+// Fix rotation behavior: NO manual rotation allowed
+map.dragRotate.disable();
+map.touchRotate.disable();
+let rotationHoldTimer = null;
+const ROTATION_RETURN_DELAY = 5000; // return to north after 5 seconds of no touch
+
 let userHasTouchedMap = false;
 let lastHeading = 0;
 
@@ -1057,11 +1066,7 @@ if (navigator.geolocation){
     }
 
     // Only rotate if autoRotation is enabled manually
-    if (autoRotation && heading !== null) {
-        const smooth = (heading * 0.85) + (lastHeading * 0.15);
-        map.setBearing(smooth, { animate: true, duration: 500 });
-        lastHeading = smooth;
-    }
+    applyAutoRotation(heading);
 
     await adaptiveAIDashboard(latlng, heading);
     smartStepAdvancement(latlng);
@@ -1070,24 +1075,25 @@ if (navigator.geolocation){
     // ===============================
     // FIXED COMPASS BUTTON BEHAVIOR
     // ===============================
-    document.getElementById("compass-btn").onclick = () => {
-        if (!userMarker) return;
+    // Always follow location when rotating
+    const compassBtn = document.getElementById("compass-btn");
 
-        follow = true;
-        autoCenter = true;
-        autoRotation = false;   // TURN OFF dynamic rotation
-        userHasTouchedMap = false;
+    compassBtn.onclick = () => {
+        // Toggle mode
+        if (mapRotationMode === "north") {
+            mapRotationMode = "heading";
+            compassBtn.style.background = "#00b36b";
+            compassBtn.textContent = "🧭";
+            autoCenter = true;
+            follow = true;
+        } else {
+            mapRotationMode = "north";
+            compassBtn.style.background = "#ff1212";
+            compassBtn.textContent = "⬆️";
 
-        // Reset map rotation to normal (0 degrees)
-        map.setBearing(0, { animate: true, duration: 800 });
-
-        // Smooth recenter on car
-        map.flyTo(userMarker.getLatLng(), 19, { animate: true, duration: 1 });
-
-        // Visual feedback
-        const btn = document.getElementById("compass-btn");
-        btn.style.background = "#00b36b";
-        setTimeout(() => btn.style.background = "#ff1212", 500);
+            // Reset map bearing to normal
+            map.setBearing(0, { animate: true, duration: 800 });
+        }
     };
   }, console.warn, { enableHighAccuracy:true, maximumAge:1000, timeout:5000 });
 }
@@ -1097,7 +1103,18 @@ setInterval(() => {
         map.panTo(userMarker.getLatLng(), { animate: true });
     }
 }, 4000);
+// Apply rotation smoothly ONLY when compass mode enabled
+function applyAutoRotation(heading) {
+    if (mapRotationMode !== "heading") return;
 
+    if (heading == null || heading === 0) heading = lastHeading;
+
+    const smoothHeading = lastHeading * 0.6 + heading * 0.4;
+
+    map.setBearing(smoothHeading, { animate: true, duration: 400 });
+
+    lastHeading = smoothHeading;
+}
 // === Speed Limit (Overpass API - Real Data Only) ===
 let lastSpeedLimit = null;
 let lastSpeedLimitFetch = 0;
@@ -2645,4 +2662,3 @@ micBtn.onclick = async () => {
 </script>
 </body>
 </html>
-

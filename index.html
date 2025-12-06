@@ -1720,6 +1720,13 @@ async function safeReroute(route, startLL, destLL) {
         // hide default routing UI from Leaflet
         document.querySelectorAll(".leaflet-routing-container")
             .forEach(x => x.style.display = "none");
+        // 🔧 FIX: force routing line to attach to our route.group
+        setTimeout(() => {
+            if (route.rc && route.rc._line) {
+                route.group.addLayer(route.rc._line);
+                route.rc._line.setStyle({ color, weight: 6, opacity: 1 });
+            }
+        }, 600);
 
         // rebuild step list
         const box = document.querySelector(`#route-box-${routeIndex} .route-content`);

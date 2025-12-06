@@ -1014,6 +1014,12 @@ map.on("movestart", (e) => {
         userHasTouchedMap = true;
     }
 });
+map.on("dragstart", () => {
+    follow = false;
+    autoCenter = false;
+    autoRotation = false;
+    userHasTouchedMap = true;
+});
 
 // Resume rotation after 2s if user stops interacting
 // 🆕 Resume follow ONLY if 1 minute passes without interaction
@@ -1044,22 +1050,54 @@ if (navigator.geolocation){
 
     // 🆕 Only follow when follow mode is active
     // Only center if user did NOT interact manually
-    if (follow && !userHasTouchedMap) {
-        map.panTo(latlng, { animate: true });
+    if (follow && autoCenter) {
+        if (!userHasTouchedMap) {
+            map.setView(latlng, map.getZoom(), { animate: true });
+        }
     }
 
     // Only rotate if autoRotation is enabled manually
     if (autoRotation && heading !== null) {
-        map.setBearing(heading, { animate: true, duration: 300 });
+        const smooth = (heading * 0.85) + (lastHeading * 0.15);
+        map.setBearing(smooth, { animate: true, duration: 500 });
+        lastHeading = smooth;
     }
 
     await adaptiveAIDashboard(latlng, heading);
     smartStepAdvancement(latlng);
     checkUpcomingSteps(latlng);
     maybeRepeatCurrentStep();
+    // ===============================
+    // FIXED COMPASS BUTTON BEHAVIOR
+    // ===============================
+    document.getElementById("compass-btn").onclick = () => {
+        if (!userMarker) return;
 
+        follow = true;
+        autoCenter = true;
+        autoRotation = false;   // TURN OFF dynamic rotation
+        userHasTouchedMap = false;
+
+        // Reset map rotation to normal (0 degrees)
+        map.setBearing(0, { animate: true, duration: 800 });
+
+        // Smooth recenter on car
+        map.flyTo(userMarker.getLatLng(), 19, { animate: true, duration: 1 });
+
+        // Visual feedback
+        const btn = document.getElementById("compass-btn");
+        btn.style.background = "#00b36b";
+        setTimeout(() => btn.style.background = "#ff1212", 500);
+    };
   }, console.warn, { enableHighAccuracy:true, maximumAge:1000, timeout:5000 });
 }
+// keep map centered automatically if follow mode is ON
+setInterval(() => {
+    if (follow && autoCenter && userMarker && !userHasTouchedMap) {
+        map.panTo(userMarker.getLatLng(), { animate: true });
+    }
+}, 4000);
+
 // === Speed Limit (Overpass API - Real Data Only) ===
 let lastSpeedLimit = null;
 let lastSpeedLimitFetch = 0;
@@ -1522,76 +1560,12 @@ function animateMarker(timestamp) {
         startLatLng = targetLatLng;
     }
 }
-// ===== GPS watch =====
-if (navigator.geolocation){
-  navigator.geolocation.watchPosition(async pos=>{
-    const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
-    updateSpeedLimit(latlng);
-    const currentSpeed = calculateGPSSpeed(latlng);
-    let heading = pos.coords.heading;
-    const MIN_SPEED_FOR_HEADING = 5/3.6;
-    if (heading == null || currentSpeed < MIN_SPEED_FOR_HEADING) {
-      const carEl = document.getElementById('user-car-svg');
-      if (carEl) {
-        const m = (carEl.style.transform || "").match(/rotate\(([^)]+)deg\)/);
-        heading = m ? parseFloat(m[1]) : 0;
-      } else heading = 0;
-    }
-    // 🔹 ADD THIS:
-    lastHeading = heading;
-    if(!waypoints.length) waypoints.push(latlng); else waypoints[0]=latlng;
-    // Always update marker position
-    if (!userMarker) {
-        userMarker = L.marker(latlng, { icon: carIcon }).addTo(map);
-    } else {
-        userMarker.setLatLng(latlng);
-    }
-    // AUTO FOLLOW AND ROTATE BASED ON HEADING
-    const speedThreshold = 4; // km/h
 
-    if (pos.coords.speed * 3.6 > speedThreshold) {
-        // Real heading from GPS if available
-        if (heading !== null && heading !== 0) {
-            autoRotation = true;
-            map.setBearing(heading, { animate: true, duration: 400 });
-
-            // Rotate car marker to match heading
-            const carSvg = document.getElementById("user-car-svg");
-            if (carSvg) carSvg.style.transform = `rotate(${heading}deg)`;
-        }
-    }
-
-    // Auto-center only if enabled
-    if (autoCenter) {
-        map.panTo(latlng, { animate: true });
-    }
-
-    // Auto resume rotation if user stopped interacting
-    if (!autoRotation && Date.now() - lastManualRotation > manualRotationTimeout && currentSpeed > 3) {
-        autoRotation = true;
-    }
-    document.getElementById("compass-btn").onclick = () => {
-        autoRotation = false;
-        follow = true; 
-        autoCenter = true;
-
-        // Reset map rotation
-        map.setBearing(0, { animate: true, duration: 400 });
-
-        // Reset car icon rotation
-        const carEl = document.getElementById("user-car-svg");
-        if (carEl) carEl.style.transform = "rotate(0deg)";
-
-        // Visual feedback
-        const btn = document.getElementById("compass-btn");
-        btn.style.background = "#00b36b";
-        setTimeout(() => btn.style.background = "#ff1212", 500);
-    };
-  }, ()=>console.warn("GPS unavailable"), { enableHighAccuracy:true, maximumAge:1000, timeout:5000 });
-}
 // ================== AI LOOP (runs once every 900 ms) ==================
 setInterval(() => {
     if (!userMarker || useVirtualGPS) return;
+    // Prevent snapping map every loop when user is interacting
+    if (userHasTouchedMap) return;
     const latlng = userMarker.getLatLng();
     adaptiveAIDashboard(latlng, lastHeading);
 }, 900);
@@ -2076,26 +2050,6 @@ document.getElementById("locate-btn").onclick = () => {
     // NOTE: Do NOT enable autoRotation here.
     map.flyTo(userMarker.getLatLng(), 19, { animate:true, duration:0.9 });
 };
-document.getElementById("compass-btn").onclick = () => {
-
-    // Stop all automatic behavior
-    follow = true;
-    autoRotation = false;
-    userHasTouchedMap = true;
-    autoCenter = false;
-
-    // Hard reset rotation & car icon alignment
-    map.setBearing(0, { animate: true, duration: 250 });
-
-    const svg = document.getElementById("user-car-svg");
-    if (svg) svg.style.transform = "rotate(0deg) !important";  // car icon straight
-
-    // Button feedback
-    const btn = document.getElementById("compass-btn");
-    btn.style.background = "#00b36b";
-    setTimeout(() => btn.style.background = "#1e90ff", 500);
-};
-
 // ===== Search =====
 const input = document.getElementById("searchInput");
 const suggestBox = document.getElementById("suggestBox");
@@ -2691,3 +2645,4 @@ micBtn.onclick = async () => {
 </script>
 </body>
 </html>
+

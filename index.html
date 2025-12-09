@@ -126,6 +126,17 @@ font-weight:bold;cursor:pointer;box-shadow:0 0.4vh 1vh rgba(0,0,0,0.3);}
   padding-bottom: 90px; /* leave space for UI controls */
   box-sizing: border-box;
 }
+/* FULLSCREEN MODE FIX */
+.map-container.fullscreen {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 105vh !important;
+    z-index: 9999 !important;
+    padding: 0 !important;
+}
+
 .map{width:100%;height:90%;}
 /* === Locate (Target) Button === */
 #locate-btn {
@@ -155,8 +166,8 @@ font-weight:bold;cursor:pointer;box-shadow:0 0.4vh 1vh rgba(0,0,0,0.3);}
 border:none;border-radius:1vh;padding:0.4vh 5vw;font-weight:bold;cursor:pointer;color:#000;pointer-events: auto;}
 /* === ROUTE PANEL === */
 #routePanel {
-  position: absolute;
-  bottom: 20vh; /* lifted above bottom UI elements */
+  position: fixed;
+  bottom: 9vh; /* lifted above bottom UI elements */
   left: 2vw;
   width: 270px;
   max-height: 32vh; /* more height and scrollable */
@@ -884,6 +895,7 @@ approvalStartBtn.addEventListener("click", () => {
   if (!preview.active || !preview.end) return;
   // 🆕 Enable auto-rotation toward route when navigation begins
   autoRotation = true;
+  rotateTowardRoute();
   follow = true;
   lastUserInteraction = Date.now();
 
@@ -1489,15 +1501,14 @@ function distanceToSegment(p, a, b) {
     // Return distance in meters (approximate conversion)
     return L.latLng(x, y).distanceTo(L.latLng(xx, yy));
 }
-async function triggerReroute(currentLL, route) {
-    speak("Re-routing...", "warning", { interrupt: true });
+function triggerReroute(currentLL, route) {
+    speak("Recalculating route.", "warning", { interrupt: true });
 
     const lastStep = route.steps[route.steps.length - 1];
     const destLL = L.latLng(lastStep.lat, lastStep.lng);
 
-    safeReroute(route, currentLL, destLL);
+    safeReroute(route, currentLL, destLL); 
 }
-
 // ===== Main AI loop =====
 async function adaptiveAIDashboard(latlng, heading) {
   const currentSpeed = calculateGPSSpeed(latlng);
@@ -1546,10 +1557,24 @@ async function adaptiveAIDashboard(latlng, heading) {
     checkUpcomingSteps(latlng);
 
     // Calculate remaining distance
-    let remaining = 0;
-    for (let i = currentStepIndex; i < steps.length; i++) remaining += steps[i].distance;
-    const distanceEl = document.getElementById(`route-distance-${routeDisplayIndex}`);
-    if (distanceEl) distanceEl.textContent = `${(remaining / 1000).toFixed(1)} km remaining`;
+    // 🔥 Live updating remaining route distance (GPS based)
+    if (route.steps && route.steps.length) {
+        let remainingDist = 0;
+
+        // distance from current location to start of active step
+        const curStep = steps[currentStepIndex];
+        const stepLL = L.latLng(curStep.lat, curStep.lng);
+        remainingDist += latlng.distanceTo(stepLL);
+
+        // total remaining steps
+        for (let i = currentStepIndex; i < steps.length; i++) {
+            remainingDist += steps[i].distance;
+        }
+
+        const km = (remainingDist / 1000).toFixed(1);
+        const distanceEl = document.getElementById(`route-distance-${routeDisplayIndex}`);
+        if (distanceEl) distanceEl.textContent = `${km} km remaining`;
+    }
   }
 
   checkWarnings(currentSpeed, eco);
@@ -1670,118 +1695,132 @@ async function getEnglishName(lat, lon) {
 // ======================================================
 // SAFE REROUTE ENGINE — preserves route box, index, color
 // ======================================================
-
-async function safeReroute(route, startLL, destLL) {
-
+async function safeReroute(route, currentLL) {
     const routeIndex = route.routeIndex;
-    const color = route.color;
 
-    // keep UI box and waypoint marker intact
+    speak("Recalculating route.", "warning", { interrupt: true });
+
+    // 1️⃣ Get destination (last step)
+    const lastStep = route.steps[route.steps.length - 1];
+    const destLL = L.latLng(lastStep.lat, lastStep.lng);
+
+    // 2️⃣ Remove only the OLD line + step layers
     try { map.removeControl(route.rc); } catch {}
     try { map.removeLayer(route.group); } catch {}
 
-    route.group = L.layerGroup().addTo(map);
+    // 3️⃣ Create NEW group for rerouted line
+    const newGroup = L.layerGroup().addTo(map);
+    route.group = newGroup; // replace only this route’s group
 
+    // 4️⃣ Generate new route using OSRM
     const router = L.Routing.osrmv1({
         serviceUrl: "https://router.project-osrm.org/route/v1"
     });
 
-    router.route([{ latLng: startLL }, { latLng: destLL }], async (err, result) => {
-        if (err || !result || !result[0]) {
-            console.warn("❌ Reroute failed", err);
-            speak("Route unavailable.", "warning");
-            return;
-        }
-
-        const r = result[0];
-
-        // rebuild visible polyline
-        route.polyline = L.polyline(
-            r.coordinates.map(c => [c.lat, c.lng]), 
-            { color, weight: 6, opacity: 1 }
-        ).addTo(route.group);
-
-        // rebuild routing control (hidden)
-        route.rc = L.Routing.control({
-            waypoints: [startLL, destLL],
-            show: false,
-            addWaypoints: false,
-            createMarker: () => null,
-            lineOptions: {
-                styles: [{ color, weight: 5, opacity: 0.9 }]
+    router.route(
+        [{ latLng: currentLL }, { latLng: destLL }],
+        async (err, result) => {
+            if (err || !result || !result[0]) {
+                console.warn("Rerouting failed", err);
+                return;
             }
-        }).addTo(map);
 
-        // hide default routing UI from Leaflet
-        document.querySelectorAll(".leaflet-routing-container")
-            .forEach(x => x.style.display = "none");
-        // 🔧 FIX: force routing line to attach to our route.group
-        setTimeout(() => {
-            if (route.rc && route.rc._line) {
-                route.group.addLayer(route.rc._line);
-                route.rc._line.setStyle({ color, weight: 6, opacity: 1 });
-            }
-        }, 600);
+            const r = result[0];
 
-        // rebuild step list
-        const box = document.querySelector(`#route-box-${routeIndex} .route-content`);
-        const distanceDisplay = document.getElementById(`route-distance-${routeIndex}`);
-        box.innerHTML = "";
-        route.steps = [];
+            // 5️⃣ Replace route.rc with new control
+            route.rc = L.Routing.control({
+                router,
+                waypoints: [currentLL, destLL],
+                show: false,
+                addWaypoints: false,
+                createMarker: () => null,
+                lineOptions: {
+                    styles: [{
+                        color: route.color,
+                        weight: 5,
+                        opacity: 0.9
+                    }]
+                }
+            }).addTo(map);
 
-        let coords = r.coordinates.map(c => ({ lat: c.lat, lng: c.lng }));
-        let elevs = await getElevations(coords);
+            document.querySelectorAll(".leaflet-routing-container")
+                .forEach(x => x.style.display = "none");
 
-        r.instructions.forEach((step, i) => {
+            // 6️⃣ Build steps again into SAME box
+            const content = document.querySelector(
+                `#route-box-${routeIndex} .route-content`
+            );
+            const distanceEl = document.getElementById(
+                `route-distance-${routeIndex}`
+            );
 
-            const idxStart = step.index;
-            const idxEnd = (i + 1 < r.instructions.length)
-                ? r.instructions[i + 1].index
-                : coords.length - 1;
+            content.innerHTML = "";
+            route.steps = [];
 
-            const segCoords = coords.slice(idxStart, idxEnd + 1).map(c => [c.lat, c.lng]);
+            const coords = r.coordinates.map(c => ({
+                lat: c.lat,
+                lng: c.lng
+            }));
 
-            const stepLine = L.polyline(segCoords, {
-                color, weight: 4, opacity: 0.8
-            }).addTo(route.group);
+            // elevation
+            const elevs = await getElevations(coords);
 
-            const div = document.createElement("div");
-            div.className = "route-step";
-            div.innerHTML = `
-                <b>${step.text}</b>
-                <small>${(step.distance/1000).toFixed(2)} km</small>
-            `;
+            r.instructions.forEach((s, i) => {
+                const idxStart = s.index;
+                const idxEnd =
+                    i + 1 < r.instructions.length
+                        ? r.instructions[i + 1].index
+                        : coords.length;
 
-            box.appendChild(div);
+                const seg = coords
+                    .slice(idxStart, idxEnd)
+                    .map(c => [c.lat, c.lng]);
 
-            route.steps.push({
-                lat: coords[idxStart].lat,
-                lng: coords[idxStart].lng,
-                text: step.text,
-                distance: step.distance,
-                lineLayer: stepLine,
-                element: div,
-                elev: elevs[idxStart] || 0
+                const elev = elevs[idxStart] || 0;
+
+                const stepLine = L.polyline(seg, {
+                    color: route.color,
+                    weight: 5,
+                    opacity: 0.8
+                }).addTo(newGroup);
+
+                const item = document.createElement("div");
+                item.className = "route-step";
+                item.innerHTML = `
+                    <b>${s.text}</b>
+                    <div>${(s.distance / 1000).toFixed(2)} km | Elev ${elev.toFixed(1)} m</div>
+                `;
+                content.appendChild(item);
+
+                route.steps.push({
+                    lat: coords[idxStart].lat,
+                    lng: coords[idxStart].lng,
+                    text: s.text,
+                    elev,
+                    element: item,
+                    distance: s.distance,
+                    lineLayer: stepLine,
+                    translated: false
+                });
             });
-        });
 
-        // reset navigation state
-        activeRouteIndex = routeIndex;
-        currentStepIndex = 0;
-        announcedSteps.clear();
+            // 7️⃣ Reset state only for this route
+            activeRouteIndex = routeIndex;
+            currentStepIndex = 0;
+            announcedSteps.clear();
 
-        // speak next step
-        if (route.steps[0]) {
-            const s = route.steps[0];
-            speak(`${s.text}. Continue for ${(s.distance/1000).toFixed(1)} km`, "step", { interrupt: true });
+            // 8️⃣ Update distance display
+            distanceEl.textContent =
+                `${(r.summary.totalDistance / 1000).toFixed(1)} km remaining`;
+
+            // 9️⃣ Announce first step again
+            if (route.steps[0]) {
+                speak(route.steps[0].text, "step", { interrupt: true });
+            }
         }
-
-        // update UI
-        distanceDisplay.textContent = `${(r.summary.totalDistance/1000).toFixed(1)} km remaining`;
-
-        console.log("✔ Reroute applied");
-    });
+    );
 }
+
 // ======================================================
 // OVERRIDE OLD REROUTE TRIGGER
 // ======================================================
@@ -1978,6 +2017,11 @@ rc.on("routesfound", async e => {
         updateStepUI(routeIndex, 0, "active");
         announcedSteps.add(0);
       }
+      // 🧭 ⭐ AUTO ROUTE-UP MODE WHEN ROUTE IS READY ⭐
+      autoRotation = true;
+      follow = true;
+      autoCenter = true;
+      setTimeout(() => rotateTowardRoute(), 600);
       
       // Virtual GPS Trigger
       if (useVirtualGPS && steps.length > 0) {
@@ -2052,18 +2096,21 @@ function rebuildGMStartSelect() {
 }
 
 let mapFull = false;
-document.getElementById("map-toggle").addEventListener("click",()=>{
-  const mapContainer=document.querySelector(".map-container");
-  const button=document.getElementById("map-toggle");
-  if(!mapFull){
-    mapContainer.style.position="fixed"; mapContainer.style.top="0"; mapContainer.style.left="0";
-    mapContainer.style.width="100vw"; mapContainer.style.height="100vh"; mapContainer.style.zIndex="2000";
-    button.innerText="Restore"; mapFull=true; setTimeout(()=>map.invalidateSize(),300);
-  }else{
-    mapContainer.style.position=""; mapContainer.style.width=""; mapContainer.style.height=""; mapContainer.style.zIndex="";
-    button.innerText="Full Map"; mapFull=false; setTimeout(()=>map.invalidateSize(),300);
-  }
+document.getElementById("map-toggle").addEventListener("click", () => {
+    const mapContainer = document.querySelector(".map-container");
+    const button = document.getElementById("map-toggle");
+
+    mapFull = !mapFull;
+
+    if (mapFull) {
+        mapContainer.classList.add("fullscreen");
+        button.textContent = "Restore";
+    } else {
+        mapContainer.classList.remove("fullscreen");
+        button.textContent = "Full Map";
+    }
 });
+
 document.getElementById("locate-btn").onclick = () => {
     follow = true;
     autoCenter = true;

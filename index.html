@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TJL - Location-Based Navigation</title>
+<title>Test 2</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css"/>
 <style>
@@ -848,46 +848,20 @@ function clearPreview(){
 
 function buildPreviewRoute(startLL, endLL, labelText){
   clearPreview();
-  
-  // 1. Show Panel Instantly (Don't wait for server)
-  approvalTitle.textContent = "Start navigation?";
-  approvalSubtitle.textContent = labelText || "Destination";
-  approvalDistance.textContent = "Calculating...";
-  approvalDuration.textContent = "--";
-  approvalPanel.classList.add("show");
-  
-  // 2. Set Preview State Immediately (So "Start" button works even if map is loading)
-  preview.active = true;
-  preview.start = L.latLng(startLL);
-  preview.end = L.latLng(endLL);
-  preview.destLabel = labelText || "Selected destination";
-
-  // 3. Fetch Route Data in Background
   const router = L.Routing.osrmv1({ serviceUrl: 'https://router.project-osrm.org/route/v1' });
   const wp = [{ latLng: L.latLng(startLL) }, { latLng: L.latLng(endLL) }];
-  
   router.route(wp, (err, routesResp) => {
-    // If API fails, just stop here. The panel is already visible, so the user can still click Start.
-    if (err || !routesResp || !routesResp[0]) { 
-        console.warn("Preview routing failed:", err); 
-        approvalDistance.textContent = "Ready";
-        return; 
-    }
-    
+    if (err || !routesResp || !routesResp[0]) { console.warn("Preview routing failed:", err); return; }
     const r = routesResp[0];
-    preview.osrmRoute = r;
-    
-    // Draw the preview line (Blue Path)
+    preview.active = true; preview.osrmRoute = r; preview.start = L.latLng(startLL);
+    preview.end = L.latLng(endLL); preview.destLabel = labelText || "Selected destination";
     preview.group = L.layerGroup().addTo(map);
-    preview.polyline = L.polyline(r.coordinates.map(c => [c.lat, c.lng]), { 
-        color:'#4DA6FF', 
-        weight:5, 
-        opacity:0.9 
-    }).addTo(preview.group);
-    
-    // Update labels with actual numbers once loaded
+    preview.polyline = L.polyline(r.coordinates.map(c => [c.lat, c.lng]), { color:'#4DA6FF', weight:5, opacity:0.9 }).addTo(preview.group);
+    approvalTitle.textContent = "Start navigation?";
+    approvalSubtitle.textContent = preview.destLabel;
     approvalDistance.textContent = fmtKm(r.summary.totalDistance);
     approvalDuration.textContent = fmtMin(r.summary.totalTime);
+    approvalPanel.classList.add("show");
   });
 }
 
@@ -1102,31 +1076,37 @@ if (navigator.geolocation){
     maybeRepeatCurrentStep();
     // ===============================
     // FIXED COMPASS BUTTON BEHAVIOR
-    // ==============================
+    // ===============================
+    document.getElementById("compass-btn").onclick = () => {
+
+        compassMode = (compassMode + 1) % 2;
+
+        const btn = document.getElementById("compass-btn");
+
+        if (compassMode === 0) {
+            // NORTH UP MODE
+            autoRotation = false;
+            follow = true;
+            autoCenter = true;
+            map.setBearing(0, { animate: true, duration: 800 });
+
+            btn.style.background = "#ff1212";
+            btn.innerText = "⬆️";
+        } 
+        else {
+            // ROUTE UP MODE
+            autoRotation = true;
+            follow = true;
+            autoCenter = true;
+            rotateTowardRoute();
+
+            btn.style.background = "#00b36b";
+            btn.innerText = "🧭";
+        }
+    };
+
   }, console.warn, { enableHighAccuracy:true, maximumAge:1000, timeout:5000 });
 }
-const compassBtn = document.getElementById("compass-btn");
-
-compassBtn.onclick = () => {
-    compassMode = (compassMode + 1) % 2;
-
-    if (compassMode === 0) {
-        autoRotation = false;
-        follow = true;
-        autoCenter = true;
-        map.setBearing(0, { animate: true });
-        compassBtn.style.background = "#ff1212";
-        compassBtn.innerHTML = "⬆️";
-    } else {
-        autoRotation = true;
-        follow = true;
-        autoCenter = true;
-        rotateTowardRoute();
-        compassBtn.style.background = "#00b36b";
-        compassBtn.innerHTML = "🧭";
-    }
-};
-
 // keep map centered automatically if follow mode is ON
 setInterval(() => {
     if (follow && autoCenter && userMarker && !userHasTouchedMap) {
@@ -1914,24 +1894,14 @@ async function createRoute(start, end, color, marker = null, index = null) {
   };
 
 rc.on("routesfound", async e => {
-
-    if (!e.routes || !e.routes[0]) return;
-
     const r = e.routes[0];
-
-    // Reset step system SAFELY
-    currentStepIndex = 0;
-    announcedSteps.clear();
-
-    // Prepare coordinate list
     const coords = r.coordinates.map(c => ({ lat: c.lat, lng: c.lng }));
-
-    // Fetch elevations safely
+    
+    // Pre-fetch elevations for the whole path to ensure they align
     const elevs = await getElevations(coords);
 
     content.innerHTML = "";
     const steps = [];
-
 
     // ============================================================
     // ✅ UNIFIED LOOP: Handle ALL steps (Start to Finish) together
@@ -2075,24 +2045,28 @@ rc.on("routesfound", async e => {
 
 }
 
-map.on("click", async e => {
+map.on('click', e => {
+  if (!mapClickEnabled) return; // << prevent accidental taps unless button activated
+  mapClickEnabled = false;
 
-    if (!mapClickEnabled) return;
+  // Reset button UI once clicked
+  mapSelectBtn.style.background = "#ffcc00";
+  mapSelectBtn.style.color = "#000";
+  mapSelectBtn.textContent = "🖱 ";
 
-    mapClickEnabled = false;
-    mapSelectBtn.style.background = "#ffcc00";
-    mapSelectBtn.textContent = "Select";
-
-    const latlng = e.latlng;
-
-    const startPoint = userMarker 
-        ? userMarker.getLatLng() 
-        : map.getCenter();
-
-    await openPreviewTo(latlng, "Pinned location", true);
-
-    preview.start = startPoint;
-
+  const latlng = e.latlng;
+  let startPoint = null;
+  if (routes.length > 0) {
+    const lastRoute = routes[routes.length - 1];
+    const lastSteps = lastRoute.steps;
+    if (lastSteps.length > 0) { 
+      const lastStep = lastSteps[lastSteps.length - 1]; 
+      startPoint = L.latLng(lastStep.lat, lastStep.lng); 
+    }
+  }
+  if (!startPoint) startPoint = userMarker ? userMarker.getLatLng() : map.getCenter();
+  openPreviewTo(latlng, "Pinned location", true);
+  preview.start = startPoint;
 });
 
 function rebuildRoutes() {
@@ -2418,6 +2392,7 @@ function deg2rad(deg) {
   return deg * (Math.PI / 180);
 }
 async function getSearchResults(query) {
+
     const center = userMarker ? userMarker.getLatLng() : map.getCenter();
     const encoded = encodeURIComponent(query);
 
@@ -2737,4 +2712,4 @@ micBtn.onclick = async () => {
 };
 </script>
 </body>
-</html>
+  </html>

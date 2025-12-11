@@ -848,20 +848,46 @@ function clearPreview(){
 
 function buildPreviewRoute(startLL, endLL, labelText){
   clearPreview();
+  
+  // 1. Show Panel Instantly (Don't wait for server)
+  approvalTitle.textContent = "Start navigation?";
+  approvalSubtitle.textContent = labelText || "Destination";
+  approvalDistance.textContent = "Calculating...";
+  approvalDuration.textContent = "--";
+  approvalPanel.classList.add("show");
+  
+  // 2. Set Preview State Immediately (So "Start" button works even if map is loading)
+  preview.active = true;
+  preview.start = L.latLng(startLL);
+  preview.end = L.latLng(endLL);
+  preview.destLabel = labelText || "Selected destination";
+
+  // 3. Fetch Route Data in Background
   const router = L.Routing.osrmv1({ serviceUrl: 'https://router.project-osrm.org/route/v1' });
   const wp = [{ latLng: L.latLng(startLL) }, { latLng: L.latLng(endLL) }];
+  
   router.route(wp, (err, routesResp) => {
-    if (err || !routesResp || !routesResp[0]) { console.warn("Preview routing failed:", err); return; }
+    // If API fails, just stop here. The panel is already visible, so the user can still click Start.
+    if (err || !routesResp || !routesResp[0]) { 
+        console.warn("Preview routing failed:", err); 
+        approvalDistance.textContent = "Ready";
+        return; 
+    }
+    
     const r = routesResp[0];
-    preview.active = true; preview.osrmRoute = r; preview.start = L.latLng(startLL);
-    preview.end = L.latLng(endLL); preview.destLabel = labelText || "Selected destination";
+    preview.osrmRoute = r;
+    
+    // Draw the preview line (Blue Path)
     preview.group = L.layerGroup().addTo(map);
-    preview.polyline = L.polyline(r.coordinates.map(c => [c.lat, c.lng]), { color:'#4DA6FF', weight:5, opacity:0.9 }).addTo(preview.group);
-    approvalTitle.textContent = "Start navigation?";
-    approvalSubtitle.textContent = preview.destLabel;
+    preview.polyline = L.polyline(r.coordinates.map(c => [c.lat, c.lng]), { 
+        color:'#4DA6FF', 
+        weight:5, 
+        opacity:0.9 
+    }).addTo(preview.group);
+    
+    // Update labels with actual numbers once loaded
     approvalDistance.textContent = fmtKm(r.summary.totalDistance);
     approvalDuration.textContent = fmtMin(r.summary.totalTime);
-    approvalPanel.classList.add("show");
   });
 }
 
@@ -2713,4 +2739,3 @@ micBtn.onclick = async () => {
 </script>
 </body>
 </html>
-

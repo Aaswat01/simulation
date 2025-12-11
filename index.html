@@ -2418,7 +2418,6 @@ function deg2rad(deg) {
   return deg * (Math.PI / 180);
 }
 async function getSearchResults(query) {
-    return requestId === gmSearchRequestId ? final.slice(0, RESULT_LIMIT) : [];
     const center = userMarker ? userMarker.getLatLng() : map.getCenter();
     const encoded = encodeURIComponent(query);
 

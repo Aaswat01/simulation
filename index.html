@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Test 2</title>
+<title>arrow</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css"/>
 <style>
@@ -197,10 +197,15 @@ align-items:center;color:#fff;font-size:0.9rem;}
     justify-content: center;
     align-items: center;
 }
+.car-arrow-wrapper {
+  transform-origin: center center;
+}
 .user-car-svg {
     transform-origin: center;
     transition: none !important;
     transform: none !important;
+    transform-origin: 50% 50%;
+    transition: transform 0.25s linear;
 }
 
 /* === Slide-up Approval Panel === */
@@ -545,7 +550,7 @@ align-items:center;color:#fff;font-size:0.9rem;}
   transform:translateX(-50%);
   width:94vw;
   max-width:480px;
-  background:rgba(0,0,0,0.90);
+  background:rgba(255, 0, 0, 0.9);
   border:1px solid rgba(255,255,255,0.15);
   border-radius:14px;
   padding:16px;
@@ -709,7 +714,22 @@ L.control.layers(
   { position: "bottomright", collapsed: true }
 ).addTo(map);
 
-const carIcon=L.icon({iconUrl:'https://cdn-icons-png.flaticon.com/512/3097/3097144.png',iconSize:[42,42]});
+const carIcon = L.divIcon({
+  className: "car-arrow-wrapper",
+  html: `
+    <svg id="user-car-svg" width="32" height="32" viewBox="0 0 100 100">
+      <polygon 
+        points="50,0 90,100 50,80 10,100"
+        fill="#1e90ff"
+        stroke="white"
+        stroke-width="6"
+      />
+    </svg>
+  `,
+  iconSize: [32, 32],
+  iconAnchor: [16, 16]
+});
+
 const slidePanel = document.getElementById("slideRoutePanel");
 
 document.getElementById("routePanelBtn").onclick = () => {
@@ -750,6 +770,31 @@ let searchResultPins = [];
 // 🆕 Track which steps have been announced to avoid repeating
 let announcedSteps = new Set();
 let compassMode = 0;
+// ==========================
+// GLOBAL API LOAD CONTROLLER
+// Prevent too many API calls
+// ==========================
+let activeRequests = 0;
+const MAX_REQUESTS = 6;     // safe limit
+const REQUEST_DELAY = 120;  // ms delay between API queues
+
+async function safeFetch(url) {
+    // Wait if too many requests running
+    while (activeRequests >= MAX_REQUESTS) {
+        await new Promise(r => setTimeout(r, REQUEST_DELAY));
+    }
+
+    activeRequests++;
+    try {
+        const res = await fetch(url);
+        return res;
+    } catch (e) {
+        console.warn("Fetch failed:", e);
+        return null;
+    } finally {
+        activeRequests--;
+    }
+}
 
 const UI = {
   aiBox: document.getElementById("ai-tip"),
@@ -848,20 +893,46 @@ function clearPreview(){
 
 function buildPreviewRoute(startLL, endLL, labelText){
   clearPreview();
+  
+  // 1. Show Panel Instantly (Don't wait for server)
+  approvalTitle.textContent = "Start navigation?";
+  approvalSubtitle.textContent = labelText || "Destination";
+  approvalDistance.textContent = "Calculating...";
+  approvalDuration.textContent = "--";
+  approvalPanel.classList.add("show");
+  
+  // 2. Set Preview State Immediately (So "Start" button works even if map is loading)
+  preview.active = true;
+  preview.start = L.latLng(startLL);
+  preview.end = L.latLng(endLL);
+  preview.destLabel = labelText || "Selected destination";
+
+  // 3. Fetch Route Data in Background
   const router = L.Routing.osrmv1({ serviceUrl: 'https://router.project-osrm.org/route/v1' });
   const wp = [{ latLng: L.latLng(startLL) }, { latLng: L.latLng(endLL) }];
+  
   router.route(wp, (err, routesResp) => {
-    if (err || !routesResp || !routesResp[0]) { console.warn("Preview routing failed:", err); return; }
+    // If API fails, just stop here. The panel is already visible, so the user can still click Start.
+    if (err || !routesResp || !routesResp[0]) { 
+        console.warn("Preview routing failed:", err); 
+        approvalDistance.textContent = "--";
+        return; 
+    }
+    
     const r = routesResp[0];
-    preview.active = true; preview.osrmRoute = r; preview.start = L.latLng(startLL);
-    preview.end = L.latLng(endLL); preview.destLabel = labelText || "Selected destination";
+    preview.osrmRoute = r;
+    
+    // Draw the preview line (Blue Path)
     preview.group = L.layerGroup().addTo(map);
-    preview.polyline = L.polyline(r.coordinates.map(c => [c.lat, c.lng]), { color:'#4DA6FF', weight:5, opacity:0.9 }).addTo(preview.group);
-    approvalTitle.textContent = "Start navigation?";
-    approvalSubtitle.textContent = preview.destLabel;
+    preview.polyline = L.polyline(r.coordinates.map(c => [c.lat, c.lng]), { 
+        color:'#4DA6FF', 
+        weight:5, 
+        opacity:0.9 
+    }).addTo(preview.group);
+    
+    // Update labels with actual numbers once loaded
     approvalDistance.textContent = fmtKm(r.summary.totalDistance);
     approvalDuration.textContent = fmtMin(r.summary.totalTime);
-    approvalPanel.classList.add("show");
   });
 }
 
@@ -1076,37 +1147,31 @@ if (navigator.geolocation){
     maybeRepeatCurrentStep();
     // ===============================
     // FIXED COMPASS BUTTON BEHAVIOR
-    // ===============================
-    document.getElementById("compass-btn").onclick = () => {
-
-        compassMode = (compassMode + 1) % 2;
-
-        const btn = document.getElementById("compass-btn");
-
-        if (compassMode === 0) {
-            // NORTH UP MODE
-            autoRotation = false;
-            follow = true;
-            autoCenter = true;
-            map.setBearing(0, { animate: true, duration: 800 });
-
-            btn.style.background = "#ff1212";
-            btn.innerText = "⬆️";
-        } 
-        else {
-            // ROUTE UP MODE
-            autoRotation = true;
-            follow = true;
-            autoCenter = true;
-            rotateTowardRoute();
-
-            btn.style.background = "#00b36b";
-            btn.innerText = "🧭";
-        }
-    };
-
+    // ==============================
   }, console.warn, { enableHighAccuracy:true, maximumAge:1000, timeout:5000 });
 }
+const compassBtn = document.getElementById("compass-btn");
+
+compassBtn.onclick = () => {
+    compassMode = (compassMode + 1) % 2;
+
+    if (compassMode === 0) {
+        autoRotation = false;
+        follow = true;
+        autoCenter = true;
+        map.setBearing(0, { animate: true });
+        compassBtn.style.background = "#ff1212";
+        compassBtn.innerHTML = "⬆️";
+    } else {
+        autoRotation = true;
+        follow = true;
+        autoCenter = true;
+        rotateTowardRoute();
+        compassBtn.style.background = "#00b36b";
+        compassBtn.innerHTML = "🧭";
+    }
+};
+
 // keep map centered automatically if follow mode is ON
 setInterval(() => {
     if (follow && autoCenter && userMarker && !userHasTouchedMap) {
@@ -1513,6 +1578,7 @@ function triggerReroute(currentLL, route) {
 async function adaptiveAIDashboard(latlng, heading) {
   const currentSpeed = calculateGPSSpeed(latlng);
   const slopeData = await predictElevationAhead(latlng, heading);
+  
   const slope = slopeData.slope;
   await getRoadType(latlng);
 
@@ -1763,7 +1829,7 @@ async function safeReroute(route, currentLL) {
             }));
 
             // elevation
-            const elevs = await getElevations(coords);
+            const elevs = new Array(coords.length).fill(0);
 
             r.instructions.forEach((s, i) => {
                 const idxStart = s.index;
@@ -1894,14 +1960,24 @@ async function createRoute(start, end, color, marker = null, index = null) {
   };
 
 rc.on("routesfound", async e => {
+
+    if (!e.routes || !e.routes[0]) return;
+
     const r = e.routes[0];
+
+    // Reset step system SAFELY
+    currentStepIndex = 0;
+    announcedSteps.clear();
+
+    // Prepare coordinate list
     const coords = r.coordinates.map(c => ({ lat: c.lat, lng: c.lng }));
-    
-    // Pre-fetch elevations for the whole path to ensure they align
-    const elevs = await getElevations(coords);
+
+    // Fetch elevations safely
+    const elevs = new Array(coords.length).fill(0);
 
     content.innerHTML = "";
     const steps = [];
+
 
     // ============================================================
     // ✅ UNIFIED LOOP: Handle ALL steps (Start to Finish) together
@@ -1957,16 +2033,12 @@ rc.on("routesfound", async e => {
       // ======================================================
       // 🌍 TRANSLATION LOGIC (Applies to ALL steps strictly)
       // ======================================================
+      const TRANSLATE_DELAY = 450;  // global safe delay
       setTimeout(async () => {
         if (stepObj.translated) return;
 
         try {
-            // ✅ FIX: Calculate the MIDPOINT of the segment.
-            // Using the start/end gets you the intersection (wrong name).
-            // Using the middle gets you the actual road name.
-            const midIndex = Math.floor((idxStart + idxEnd) / 2);
-            const targetLat = coords[midIndex].lat;
-            const targetLng = coords[midIndex].lng;
+
 
             let englishRoad = await getEnglishName(targetLat, targetLng);
 
@@ -1994,7 +2066,7 @@ rc.on("routesfound", async e => {
         } catch (err) {
             console.warn(`Translation failed for step ${i}`, err);
         }
-      }, i * 300); // Stagger requests (600ms) to prevent API ban
+      }, i * TRANSLATE_DELAY); // Stagger requests (600ms) to prevent API ban
     });
 
     // ============================================================
@@ -2045,28 +2117,24 @@ rc.on("routesfound", async e => {
 
 }
 
-map.on('click', e => {
-  if (!mapClickEnabled) return; // << prevent accidental taps unless button activated
-  mapClickEnabled = false;
+map.on("click", async e => {
 
-  // Reset button UI once clicked
-  mapSelectBtn.style.background = "#ffcc00";
-  mapSelectBtn.style.color = "#000";
-  mapSelectBtn.textContent = "🖱 ";
+    if (!mapClickEnabled) return;
 
-  const latlng = e.latlng;
-  let startPoint = null;
-  if (routes.length > 0) {
-    const lastRoute = routes[routes.length - 1];
-    const lastSteps = lastRoute.steps;
-    if (lastSteps.length > 0) { 
-      const lastStep = lastSteps[lastSteps.length - 1]; 
-      startPoint = L.latLng(lastStep.lat, lastStep.lng); 
-    }
-  }
-  if (!startPoint) startPoint = userMarker ? userMarker.getLatLng() : map.getCenter();
-  openPreviewTo(latlng, "Pinned location", true);
-  preview.start = startPoint;
+    mapClickEnabled = false;
+    mapSelectBtn.style.background = "#ffcc00";
+    mapSelectBtn.textContent = "Select";
+
+    const latlng = e.latlng;
+
+    const startPoint = userMarker 
+        ? userMarker.getLatLng() 
+        : map.getCenter();
+
+    await openPreviewTo(latlng, "Pinned location", true);
+
+    preview.start = startPoint;
+
 });
 
 function rebuildRoutes() {
@@ -2077,7 +2145,7 @@ function rebuildRoutes() {
   waypoints.push(...validWaypoints); waypointMarkers.push(...validMarkers);
   routes.forEach(r => { try { map.removeControl(r.rc); } catch {} try { map.removeLayer(r.group); } catch {} });
   routes = []; document.getElementById("routePanel").innerHTML = "";
-  if (waypoints.length < 2) return;
+  if (waypoints.length < 1) return;
   for (let i = 1; i < waypoints.length; i++) {
     createRoute(waypoints[i-1], waypoints[i], colors[(i-1)%colors.length], waypointMarkers[i-1], i-1);
   }
@@ -2391,8 +2459,8 @@ function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
 function deg2rad(deg) {
   return deg * (Math.PI / 180);
 }
+let lastSearchController = null;
 async function getSearchResults(query) {
-
     const center = userMarker ? userMarker.getLatLng() : map.getCenter();
     const encoded = encodeURIComponent(query);
 
@@ -2424,13 +2492,16 @@ async function getSearchResults(query) {
             isCoordinate: true
         }];
     }
+    if (lastSearchController) lastSearchController.abort();
+    lastSearchController = new AbortController();
+    const signal = lastSearchController.signal;
 
     // ---- API calls ----
     const sources = [
-        fetch(`https://photon.komoot.io/api/?q=${encoded}&lat=${center.lat}&lon=${center.lng}&limit=20`).then(r => r.json()).catch(() => null),
-        fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encoded}&limit=20&accept-language=en`).then(r => r.json()).catch(() => null),
-        fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encoded}&limit=20&accept-language=auto`).then(r => r.json()).catch(() => null),
-        fetch(`https://en.wikipedia.org/w/api.php?action=query&prop=coordinates&format=json&origin=*&list=search&srsearch=${encoded}`).then(r => r.json()).catch(() => null)
+        safeFetch(`https://photon.komoot.io/api/?q=${encoded}&lat=${center.lat}&lon=${center.lng}&limit=20`).then(r => r.json()).catch(() => null),
+        safeFetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encoded}&limit=20&accept-language=en`).then(r => r.json()).catch(() => null),
+        safeFetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encoded}&limit=20&accept-language=auto`).then(r => r.json()).catch(() => null),
+        safeFetch(`https://en.wikipedia.org/w/api.php?action=query&prop=coordinates&format=json&origin=*&list=search&srsearch=${encoded}`).then(r => r.json()).catch(() => null)
     ];
 
     const responses = await Promise.allSettled(sources);
@@ -2712,4 +2783,4 @@ micBtn.onclick = async () => {
 };
 </script>
 </body>
-  </html>
+</html>

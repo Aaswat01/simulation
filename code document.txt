@@ -17,21 +17,25 @@ This system is a client-side navigation engine that:
 
 ________________________________________
 3⃣ MAIN SYSTEM STATES
-State	Description
-Idle	User moving without navigation
-Preview	Destination selected but not started
-Navigation	Active route guidance
-Rerouting	Off-route detected
-Arrival	Destination reached
+State	                 |Description
+------------------------------------------------------------
+Idle	                 |User moving without navigation
+Preview	               |Destination selected but not started
+Navigation             |Active route guidance
+Rerouting	             |Off-route detected
+Arrival	               |Destination reached
+------------------------------------------------------------
 ________________________________________
 4⃣ GLOBAL VARIABLES (SYSTEM MEMORY)
-Navigation State:
-Variable	Purpose
-routes[]	Stores all active routes
-activeRouteIndex	Which route is currently followed
-currentStepIndex	Current navigation instruction
-waypoints[]	Ordered navigation points
-waypointMarkers[]	Map markers for waypoints
+Navigation            |   State:
+--------------------------------------------------------------
+Variable	            |   Purpose
+routes[]	            |   Stores all active routes
+activeRouteIndex	    |   Which route is currently followed
+currentStepIndex	    |   Current navigation instruction
+waypoints[]	          |   Ordered navigation points
+waypointMarkers[]	    |   Map markers for waypoints
+--------------------------------------------------------------
 
 GPS / Motion:
 Variable	Purpose
@@ -267,5 +271,6 @@ ________________________________________
 ✔ Scalable for future AI models
 ✔ Clean separation of concerns
 ________________________________________
+
 
 

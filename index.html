@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>arrow</title>
+<title>Testing</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css"/>
 <style>
@@ -197,15 +197,10 @@ align-items:center;color:#fff;font-size:0.9rem;}
     justify-content: center;
     align-items: center;
 }
-.car-arrow-wrapper {
-  transform-origin: center center;
-}
 .user-car-svg {
     transform-origin: center;
     transition: none !important;
     transform: none !important;
-    transform-origin: 50% 50%;
-    transition: transform 0.25s linear;
 }
 
 /* === Slide-up Approval Panel === */
@@ -519,6 +514,68 @@ align-items:center;color:#fff;font-size:0.9rem;}
   font-weight: 800;
   font-size: 14px;
 }
+.clear-btn {
+  background: transparent;
+  border: none;
+  font-size: 1.4rem;
+  cursor: pointer;
+  color: #ff0000;
+  display: none;
+  padding: 4px;
+  position: absolute;
+  right: 14px;
+}
+#searchContainer {
+  display: flex;
+  align-items: center;
+}
+/* === GOOGLE MAPS STYLE SMART ARROWS === */
+.gm-road-arrow {
+  width: 24px;
+  height: 24px;
+  background: #ffffff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  transform-origin: center center;
+  z-index: 500;
+}
+
+.gm-arrow-icon {
+  width: 16px;
+  height: 16px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+
+/* --- SMART ARROW TYPES (SVGs) --- */
+/* Straight */
+.gm-arrow-straight {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000000'%3E%3Cpath d='M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z'/%3E%3C/svg%3E");
+}
+/* Slight Left (Curve) */
+.gm-arrow-slight-left {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000000'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z' transform='rotate(45 12 12)'/%3E%3C/svg%3E");
+}
+/* Slight Right (Curve) */
+.gm-arrow-slight-right {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000000'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z' transform='rotate(-45 12 12)'/%3E%3C/svg%3E");
+}
+/* Sharp Left (Turn) */
+.gm-arrow-left {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000000'%3E%3Cpath d='M14 7l-5 5 5 5V7z'/%3E%3C/svg%3E");
+}
+/* Sharp Right (Turn) */
+.gm-arrow-right {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000000'%3E%3Cpath d='M10 17l5-5-5-5v10z'/%3E%3C/svg%3E");
+}
+/* U-Turn */
+.gm-arrow-uturn {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000000'%3E%3Cpath d='M6 18c0 .55.45 1 1 1h1v3.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5V6.41l1.29 1.29c.39.39 1.02.39 1.41 0s.39-1.02 0-1.41L9.71 2.29c-.39-.39-1.02-.39-1.41 0L4.29 6.29c-.39.39-.39 1.02 0 1.41s1.02.39 1.41 0L7 6.41V18H6z' transform='rotate(180 12 12)'/%3E%3C/svg%3E");
+}
 
 </style>
 </head>
@@ -550,7 +607,7 @@ align-items:center;color:#fff;font-size:0.9rem;}
   transform:translateX(-50%);
   width:94vw;
   max-width:480px;
-  background:rgba(255, 0, 0, 0.9);
+  background:rgba(0,0,0,0.90);
   border:1px solid rgba(255,255,255,0.15);
   border-radius:14px;
   padding:16px;
@@ -608,19 +665,7 @@ align-items:center;color:#fff;font-size:0.9rem;}
       padding:1.3vh 1.2vw;font-weight:bold;cursor:pointer;box-shadow:0 0.4vh 1vh rgba(0,0,0,0.3);"> Select
       </button>
       <input type="text" id="searchInput" placeholder="Search destination...">
-      <button id="clearSearchBtn" 
-      style="
-        position: absolute; 
-        right: 24.5vw; 
-        background: transparent; 
-        border: none; 
-        font-size: 1.5rem; 
-        cursor: pointer; 
-        display: none; 
-        color:#888;
-      ">
-      ✖
-      </button>
+      <button id="clearSearchBtn" class="clear-btn">✖</button>
       <!-- MOVE SUGGESTION BOX OUTSIDE -->
       <div id="suggestBox" class="universal-suggest-box"></div>
     </div>
@@ -714,22 +759,7 @@ L.control.layers(
   { position: "bottomright", collapsed: true }
 ).addTo(map);
 
-const carIcon = L.divIcon({
-  className: "car-arrow-wrapper",
-  html: `
-    <svg id="user-car-svg" width="32" height="32" viewBox="0 0 100 100">
-      <polygon 
-        points="50,0 90,100 50,80 10,100"
-        fill="#1e90ff"
-        stroke="white"
-        stroke-width="6"
-      />
-    </svg>
-  `,
-  iconSize: [32, 32],
-  iconAnchor: [16, 16]
-});
-
+const carIcon=L.icon({iconUrl:'https://cdn-icons-png.flaticon.com/512/3097/3097144.png',iconSize:[42,42]});
 const slidePanel = document.getElementById("slideRoutePanel");
 
 document.getElementById("routePanelBtn").onclick = () => {
@@ -777,25 +807,62 @@ let compassMode = 0;
 let activeRequests = 0;
 const MAX_REQUESTS = 6;     // safe limit
 const REQUEST_DELAY = 120;  // ms delay between API queues
+// Add cooldown tracking for reroute
+let lastRerouteTime = 0;
+const REROUTE_COOLDOWN = 15000; // 15 seconds
+const requestQueue = [];
+let isProcessingQueue = false;
+let __searchSeq = 0;   // 🔒 hard cancel token
 
-async function safeFetch(url) {
-    // Wait if too many requests running
-    while (activeRequests >= MAX_REQUESTS) {
-        await new Promise(r => setTimeout(r, REQUEST_DELAY));
-    }
-
-    activeRequests++;
-    try {
-        const res = await fetch(url);
-        return res;
-    } catch (e) {
-        console.warn("Fetch failed:", e);
-        return null;
-    } finally {
-        activeRequests--;
-    }
+async function safeFetch(url, retries = 2) {
+    return new Promise((resolve, reject) => {
+        requestQueue.push({ url, retries, resolve, reject });
+        processQueue();
+    });
 }
 
+async function processQueue() {
+    if (isProcessingQueue || requestQueue.length === 0) return;
+    
+    isProcessingQueue = true;
+    
+    while (requestQueue.length > 0 && activeRequests < MAX_REQUESTS) {
+        const task = requestQueue.shift();
+        activeRequests++;
+        
+        try {
+            const res = await fetch(task.url);
+            
+            if (res.status === 504 || res.status === 429) {
+                // Retry after delay
+                if (task.retries > 0) {
+                    await new Promise(r => setTimeout(r, 2000));
+                    task.retries--;
+                    requestQueue.unshift(task); // Put back at front
+                } else {
+                    task.reject(new Error(`Failed after retries: ${res.status}`));
+                }
+            } else {
+                task.resolve(res);
+            }
+        } catch (e) {
+            if (task.retries > 0) {
+                task.retries--;
+                requestQueue.unshift(task);
+            } else {
+                task.reject(e);
+            }
+        } finally {
+            activeRequests--;
+        }
+    }
+    
+    isProcessingQueue = false;
+    
+    if (requestQueue.length > 0) {
+        setTimeout(processQueue, REQUEST_DELAY);
+    }
+}
 const UI = {
   aiBox: document.getElementById("ai-tip"),
   speedEl: document.getElementById("speed"),
@@ -890,7 +957,30 @@ function clearPreview(){
   preview = { active:false, group:null, polyline:null, osrmRoute:null, start:null, end:null, destLabel:"", tempMarker:null };
   approvalPanel.classList.remove("show");
 }
+// ==============================
+// SINGLE SHARED OSRM ROUTER - FIXED
+// ==============================
+const OSRM_ROUTER = L.Routing.osrmv1({
+  serviceUrl: "https://router.project-osrm.org/route/v1/driving",  // ✅ MUST include /driving
+  timeout: 15000,  // 15 second timeout
+  profile: 'driving'
+});
 
+// ✅ CRITICAL: Override the buildRouteUrl method to fix the /undefined/ bug
+OSRM_ROUTER.buildRouteUrl = function(waypoints, options) {
+  const locs = waypoints.map(wp => `${wp.latLng.lng},${wp.latLng.lat}`).join(';');
+  
+  // Force correct parameters
+  const params = new URLSearchParams({
+    overview: 'full',
+    steps: true,
+    geometries: 'polyline',
+    alternatives: false  // ✅ Explicitly disable
+  });
+  
+  // ✅ Return proper URL with /driving/ profile
+  return `https://router.project-osrm.org/route/v1/driving/${locs}?${params.toString()}`;
+};
 function buildPreviewRoute(startLL, endLL, labelText){
   clearPreview();
   
@@ -908,10 +998,9 @@ function buildPreviewRoute(startLL, endLL, labelText){
   preview.destLabel = labelText || "Selected destination";
 
   // 3. Fetch Route Data in Background
-  const router = L.Routing.osrmv1({ serviceUrl: 'https://router.project-osrm.org/route/v1' });
   const wp = [{ latLng: L.latLng(startLL) }, { latLng: L.latLng(endLL) }];
   
-  router.route(wp, (err, routesResp) => {
+  OSRM_ROUTER.route(wp, (err, routesResp) => {
     // If API fails, just stop here. The panel is already visible, so the user can still click Start.
     if (err || !routesResp || !routesResp[0]) { 
         console.warn("Preview routing failed:", err); 
@@ -964,7 +1053,14 @@ async function openPreviewTo(latlng, label, addTempMarker = true) {
 
 approvalStartBtn.addEventListener("click", () => {
   if (!preview.active || !preview.end) return;
+  // ✅ Cancel any pending preview route request
+  if (preview.rc) {
+    try { map.removeControl(preview.rc); } catch {}
+  }
   // 🆕 Enable auto-rotation toward route when navigation begins
+  if (preview.rc) {
+    try { map.removeControl(preview.rc); } catch {}
+  }
   autoRotation = true;
   rotateTowardRoute();
   follow = true;
@@ -1178,21 +1274,35 @@ setInterval(() => {
         map.panTo(userMarker.getLatLng(), { animate: true });
     }
 }, 4000);
+
+// ===============================
+// FIXED: ROTATION LOGIC (Faces Path Upwards)
+// ===============================
 function rotateTowardRoute() {
+    // Basic checks to ensure we have a valid route
     if (!routes.length || activeRouteIndex === null) return;
-
     const route = routes[activeRouteIndex];
-    if (!route.steps || !route.steps[currentStepIndex + 1]) return;
+    if (!route.steps) return;
 
-    const cur = route.steps[currentStepIndex];
-    const next = route.steps[currentStepIndex + 1];
+    let p1, p2;
 
-    // Compute angle
-    const angle = Math.atan2(
-        next.lng - cur.lng,
-        next.lat - cur.lat
-    ) * 180 / Math.PI;
+    // CASE 1: Normal Driving (Align P1 -> P2)
+    if (route.steps[currentStepIndex + 1]) {
+        p1 = route.steps[currentStepIndex];
+        p2 = route.steps[currentStepIndex + 1];
+    } 
+    // CASE 2: Arriving at Destination (Keep alignment of the final approach)
+    else if (currentStepIndex > 0) {
+        p1 = route.steps[currentStepIndex - 1];
+        p2 = route.steps[currentStepIndex];
+    } else {
+        return; // Should not happen
+    }
 
+    // Calculate the bearing of the road segment
+    const angle = Math.atan2(p2.lng - p1.lng, p2.lat - p1.lat) * 180 / Math.PI;
+
+    // Rotate the map so this angle faces "Up" (Top of phone)
     map.setBearing((angle + 360) % 360, { animate: true, duration: 800 });
 }
 
@@ -1343,54 +1453,88 @@ function findCurrentStepByLocation(latlng, route) {
   
   return closestStepIndex >= 0 ? { index: closestStepIndex, distance: closestDistance } : null;
 }
+// ===============================
+// STEP LINE FADE / ERASE ANIMATION
+// ===============================
+function fadeOutStepLine(line, duration = 700) {
+    if (!line) return;
+
+    const start = performance.now();
+    const initialOpacity = line.options.opacity ?? 0.8;
+    const initialWeight = line.options.weight ?? 5;
+
+    function animate(now) {
+        const progress = Math.min((now - start) / duration, 1);
+
+        const newOpacity = initialOpacity * (1 - progress);
+        const newWeight = Math.max(1, initialWeight * (1 - progress));
+
+        line.setStyle({
+            opacity: newOpacity,
+            weight: newWeight
+        });
+
+        if (progress < 1) {
+            requestAnimationFrame(animate);
+        } else {
+            // fully remove after fade
+            try {
+                line.remove();
+            } catch {}
+        }
+    }
+
+    requestAnimationFrame(animate);
+}
 
 // 🆕 SMART STEP ADVANCEMENT
 // Handles skipping missed steps and announcing current location
 function smartStepAdvancement(latlng) {
   if (activeRouteIndex === null || !routes[activeRouteIndex]) return;
-  
   const route = routes[activeRouteIndex];
   const steps = route.steps;
-  
   // Find where driver actually is
   const locationResult = findCurrentStepByLocation(latlng, route);
-  
   if (locationResult && locationResult.index !== currentStepIndex) {
     // Driver has moved to a different step!
     const newStepIndex = locationResult.index;
-    
-    console.log(`🚗 Location jump detected: ${currentStepIndex} → ${newStepIndex}`);
-    
+    console.log(`🚗 Location jump detected: ${currentStepIndex} → ${newStepIndex}`);  
     // Mark all skipped steps as completed (hide them)
     for (let i = currentStepIndex; i < newStepIndex; i++) {
-      updateStepUI(activeRouteIndex, i, 'completed');
-      if (steps[i].lineLayer) route.group.removeLayer(steps[i].lineLayer);
-      if (steps[i].connectorLine) route.group.removeLayer(steps[i].connectorLine);
-    }
-    
+        updateStepUI(activeRouteIndex, i, 'completed');
+        // 🔥 Smoothly erase completed step line instead of hard removal
+        if (steps[i].lineLayer) {
+            fadeOutStepLine(steps[i].lineLayer);
+            steps[i].lineLayer = null; // prevent double removal
+        }     
+        if (steps[i].connectorLine) {
+            fadeOutStepLine(steps[i].connectorLine, 400);
+            steps[i].connectorLine = null;
+        }
+    }   
     // Update current step
     currentStepIndex = newStepIndex;
-    announcedSteps.clear(); // Reset announcements
-    
+    announcedSteps.clear(); // Reset announcements 
+    // 3. 🔥 NEW: Force Map to Rotate Upwards for the New Step
+    if (autoRotation) {
+        rotateTowardRoute();
+    }
     // If this is the last step (destination)
     if (currentStepIndex >= steps.length - 1) {
       updateStepUI(activeRouteIndex, currentStepIndex, 'completed');
       speak("Destination reached.", "step", { interrupt: true });
-      UI.aiBox.textContent = "Destination reached ✅";
-      
+      UI.aiBox.textContent = "Destination reached ✅";    
       setTimeout(() => {
         cleanupRoute(route);
       }, 3000);
       return;
-    }
-    
+    } 
     // Mark current step as active and announce it
     updateStepUI(activeRouteIndex, currentStepIndex, 'active');
     const step = steps[currentStepIndex];
     const distText = step.distance < 1000 
       ? `${step.distance.toFixed(0)} meters` 
       : `${(step.distance / 1000).toFixed(1)} kilometers`;
-    
     const announcement = `${step.text}. Proceed for ${distText}.`;
     speak(announcement, "step", { interrupt: true });
     announcedSteps.add(currentStepIndex);
@@ -1574,6 +1718,43 @@ function triggerReroute(currentLL, route) {
 
     safeReroute(route, currentLL, destLL); 
 }
+function addGoogleStyleRoadArrows(coords, group) {
+    const arrows = [];
+
+    const SPACING = 30;        // meters between arrows
+    const ANGLE_TRIGGER = 5;   // detect slight curves
+
+    let lastPlaced = null;
+    let lastBearing = null;
+
+    for (let i = 1; i < coords.length - 1; i++) {
+        const p0 = L.latLng(coords[i - 1]);
+        const p1 = L.latLng(coords[i]);
+        const p2 = L.latLng(coords[i + 1]);
+
+        if (lastPlaced && p1.distanceTo(lastPlaced) < SPACING) continue;
+
+        const b1 = roadBearing(p0, p1);
+        const b2 = roadBearing(p1, p2);
+        const delta = normalizeAngle(b2 - b1);
+
+        if (lastBearing !== null && Math.abs(delta) < ANGLE_TRIGGER) continue;
+
+        const symbol = gmArrowByDelta(delta);
+        const arrow = createGMArrow(p1, symbol).addTo(group);
+
+        arrows.push({
+            marker: arrow,
+            baseBearing: b2
+        });
+
+        lastPlaced = p1;
+        lastBearing = b2;
+    }
+
+    return arrows;
+}
+
 // ===== Main AI loop =====
 async function adaptiveAIDashboard(latlng, heading) {
   const currentSpeed = calculateGPSSpeed(latlng);
@@ -1604,20 +1785,29 @@ async function adaptiveAIDashboard(latlng, heading) {
         /*** 🚨 AUTO REROUTE ENGINE FIX 🚨 ***/
         const offDist = getNearestRouteDistance(latlng, route);
         const isMoving = currentSpeed > 5; // km/h threshold
+        // Add cooldown tracking at top of file with other globals
+        let lastRerouteTime = 0;
+        const REROUTE_COOLDOWN = 15000; // 15 seconds minimum between reroutes
 
         // Reroute Condition
-        if (offDist > 25 && isMoving && !route._isRerouting) {
-
-            console.warn(`👉 Off-route detected (${offDist.toFixed(1)}m) — recalculating route...`);
-
+        // Reroute Condition
+        if (offDist > 75 && isMoving && !route._isRerouting) {
+            const now = Date.now();
+            
+            // ✅ Prevent spam rerouting
+            if (now - lastRerouteTime < REROUTE_COOLDOWN) {
+                console.log("⏳ Reroute on cooldown, waiting...");
+                return;
+            }
+            
+            lastRerouteTime = now;
+            console.warn(`👉 Off-route detected (${offDist.toFixed(1)}m) – recalculating route...`);
+            
             route._isRerouting = true;
-
-            // Call reroute function using SAME destination
             triggerReroute(latlng, route);
-
-            // Cooldown to avoid reroute loops
-            setTimeout(() => route._isRerouting = false, 9000);
-        }
+            
+            setTimeout(() => route._isRerouting = false, 20000);
+}
     }
     // 🆕 Check for upcoming step announcements
     checkUpcomingSteps(latlng);
@@ -1772,18 +1962,14 @@ async function safeReroute(route, currentLL) {
 
     // 2️⃣ Remove only the OLD line + step layers
     try { map.removeControl(route.rc); } catch {}
-    try { map.removeLayer(route.group); } catch {}
+    try { route.group.clearLayers();} catch {}
 
     // 3️⃣ Create NEW group for rerouted line
     const newGroup = L.layerGroup().addTo(map);
     route.group = newGroup; // replace only this route’s group
 
     // 4️⃣ Generate new route using OSRM
-    const router = L.Routing.osrmv1({
-        serviceUrl: "https://router.project-osrm.org/route/v1"
-    });
-
-    router.route(
+    OSRM_ROUTER.route(
         [{ latLng: currentLL }, { latLng: destLL }],
         async (err, result) => {
             if (err || !result || !result[0]) {
@@ -1795,7 +1981,7 @@ async function safeReroute(route, currentLL) {
 
             // 5️⃣ Replace route.rc with new control
             route.rc = L.Routing.control({
-                router,
+                router: OSRM_ROUTER,
                 waypoints: [currentLL, destLL],
                 show: false,
                 addWaypoints: false,
@@ -1827,6 +2013,8 @@ async function safeReroute(route, currentLL) {
                 lat: c.lat,
                 lng: c.lng
             }));
+            // 🧭 rebuild Google-style road arrows after reroute
+            route.roadArrows = addGoogleStyleRoadArrows(coords, newGroup);
 
             // elevation
             const elevs = new Array(coords.length).fill(0);
@@ -1893,7 +2081,97 @@ async function safeReroute(route, currentLL) {
 function triggerReroute(currentLL, route) {
     safeReroute(route, currentLL);
 }
+// ===============================
+// GOOGLE MAPS STYLE ARROW ENGINE (SMART TURNS)
+// ===============================
 
+// 1. Calculate bearing between two points
+function roadBearing(lat1, lng1, lat2, lng2) {
+    const y = Math.sin(lng2 - lng1) * Math.cos(lat2);
+    const x = Math.cos(lat1) * Math.sin(lat2) -
+              Math.sin(lat1) * Math.cos(lat2) * Math.cos(lng2 - lng1);
+    const brng = Math.atan2(y, x);
+    return (brng * 180 / Math.PI + 360) % 360; 
+}
+
+// 2. Normalize angle difference to -180 to +180
+function normalizeAngle(angle) {
+    while (angle <= -180) angle += 360;
+    while (angle > 180) angle -= 360;
+    return angle;
+}
+
+// 3. Main Arrow Engine
+function addGoogleStyleRoadArrows(coords, group) {
+    const arrows = [];
+    const ARROW_SPACING = 60; // Slightly closer for better turn visibility
+    let distAccumulator = ARROW_SPACING; 
+
+    // Helper to get radian coords
+    const toRad = (d) => d * Math.PI / 180;
+
+    for (let i = 0; i < coords.length - 1; i++) {
+        const p1 = L.latLng(coords[i]);
+        const p2 = L.latLng(coords[i+1]);
+        
+        const segmentDist = p1.distanceTo(p2);
+        distAccumulator += segmentDist;
+
+        if (distAccumulator >= ARROW_SPACING) {
+            
+            // A. Base Bearing (Current Segment)
+            const lat1 = toRad(p1.lat), lng1 = toRad(p1.lng);
+            const lat2 = toRad(p2.lat), lng2 = toRad(p2.lng);
+            const baseBearing = roadBearing(lat1, lng1, lat2, lng2);
+
+            // B. Look Ahead for Turns (Next Segment)
+            let turnAngle = 0;
+            if (i < coords.length - 2) {
+                const p3 = L.latLng(coords[i+2]);
+                const lat3 = toRad(p3.lat), lng3 = toRad(p3.lng);
+                const nextBearing = roadBearing(lat2, lng2, lat3, lng3);
+                turnAngle = normalizeAngle(nextBearing - baseBearing);
+            }
+
+            // C. Determine Icon based on Turn Angle  
+            const arrowClass = getArrowClassByAngle(turnAngle);
+
+            // D. Create Marker
+            const arrow = createGMArrow(p1, baseBearing, arrowClass).addTo(group);
+            
+            arrows.push({
+                marker: arrow,
+                baseBearing: baseBearing
+            });
+
+            distAccumulator = 0; 
+        }
+    }
+    return arrows;
+}
+
+// 4. Smart Icon Selector
+function getArrowClassByAngle(angle) {
+    // Thresholds for turn types
+    return "gm-arrow-straight";                   // Straight
+}
+
+// 5. Create Marker
+function createGMArrow(latlng, bearing, typeClass) {
+    return L.marker(latlng, {
+        interactive: false,
+        icon: L.divIcon({
+            className: "", 
+            // We rotate the container by the road bearing
+            // The inner icon handles the specific turn shape
+            html: `<div class="gm-road-arrow" style="transform: rotate(${bearing}deg);">
+                     <div class="gm-arrow-icon ${typeClass}"></div>
+                   </div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+        })
+    });
+}
 // ===== Route creation =====
 async function createRoute(start, end, color, marker = null, index = null) {
   const routeIndex = index !== null ? index : routes.length;
@@ -1907,7 +2185,7 @@ async function createRoute(start, end, color, marker = null, index = null) {
 
   const rc = L.Routing.control({
     waypoints: [start, end],
-    router: L.Routing.osrmv1({ serviceUrl: "https://router.project-osrm.org/route/v1" }),
+    router: OSRM_ROUTER,
     show: false, addWaypoints: false, createMarker: () => null,
     lineOptions: { styles: [{ color: routeColor, weight: 5, opacity: 0.9 }] }
   }).addTo(map);
@@ -1971,6 +2249,8 @@ rc.on("routesfound", async e => {
 
     // Prepare coordinate list
     const coords = r.coordinates.map(c => ({ lat: c.lat, lng: c.lng }));
+    // 🧭 ADD GOOGLE MAPS STYLE ROAD ARROWS (NO STEP DEPENDENCY)
+    const roadArrows = addGoogleStyleRoadArrows(coords, group);
 
     // Fetch elevations safely
     const elevs = new Array(coords.length).fill(0);
@@ -2103,7 +2383,7 @@ rc.on("routesfound", async e => {
 
     // Update Route Object
     const existing = routes.find(x => x.routeIndex === routeIndex);
-    const routeObj = { rc, group, steps, endKey, routeIndex, totalDistance: r.summary.totalDistance };
+    const routeObj = { rc, group, steps, endKey, routeIndex, totalDistance: r.summary.totalDistance, roadArrows};
     
     if (existing) {
         Object.assign(existing, routeObj);
@@ -2145,7 +2425,7 @@ function rebuildRoutes() {
   waypoints.push(...validWaypoints); waypointMarkers.push(...validMarkers);
   routes.forEach(r => { try { map.removeControl(r.rc); } catch {} try { map.removeLayer(r.group); } catch {} });
   routes = []; document.getElementById("routePanel").innerHTML = "";
-  if (waypoints.length < 1) return;
+  if (waypoints.length < 2) return;
   for (let i = 1; i < waypoints.length; i++) {
     createRoute(waypoints[i-1], waypoints[i], colors[(i-1)%colors.length], waypointMarkers[i-1], i-1);
   }
@@ -2460,161 +2740,278 @@ function deg2rad(deg) {
   return deg * (Math.PI / 180);
 }
 let lastSearchController = null;
+// ======================================================
+// 🔥 NEXT-GEN SEARCH ENGINE (Google-Maps–style)
+// 🔥 Nearest-first, typo-tolerant, intent-aware
+// 🔥 ZERO UI / routing changes
+// ======================================================
+
+let __searchAbort = null;
+const __searchCache = new Map();
+
+function isStrongGlobalIntent(sim, distKm) {
+    // Very strong name match → allow far result
+    if (sim > 0.88 && distKm > 40) return true;
+
+    // City-level exact-ish match
+    if (sim > 0.92) return true;
+
+    return false;
+}
+
 async function getSearchResults(query) {
+    const seq = ++__searchSeq;   // 🔒 snapshot this request
+    query = query.trim();
+    if (!query) return [];
+
+    const cacheKey = query.toLowerCase();
+    if (__searchCache.has(cacheKey)) {
+        return __searchCache.get(cacheKey);
+    }
+
+    // Abort previous request (heavy typing protection)
+    if (__searchAbort) __searchAbort.abort();
+    __searchAbort = new AbortController();
+    const { signal } = __searchAbort;
+
     const center = userMarker ? userMarker.getLatLng() : map.getCenter();
-    const encoded = encodeURIComponent(query);
 
-    const SEARCH_RADIUS_KM = 50;
-    const RESULT_LIMIT = 15;
+    // ---------------------------
+    // CONFIG (SAFE + FAST)
+    // ---------------------------
+    const LOCAL_RADIUS_KM = 40;     // 🔒 strict local-first radius
+    const HARD_LIMIT = 18;          // max final results
+    const EARTH_R = 6371;
 
-    let results = [];
-
-    // --- Determine search category ---
-    const containsForeignChars = /[^\u0000-\u007F]/.test(query);
-    const isCoordinateFormat = /(-?\d+(\.\d+)?),\s*(-?\d+(\.\d+)?)/.test(query);
-
-    // Keywords to detect countries / world cities automatically (no fixed categories — heuristic)
-    const globalHint = ["country", "city", "capital", "airport", "border", "state"];
-    const isExplicitGlobal = globalHint.some(w => query.toLowerCase().includes(w));
-
-    const isLongName = query.length >= 6;
-    const isGlobalQuery = containsForeignChars || isExplicitGlobal || isLongName;
-
-    // --- Direct coordinate search (highest priority) ---
-    if (isCoordinateFormat) {
-        const [lat, lon] = query.split(",").map(Number);
+    // ---------------------------
+    // COORDINATE SEARCH (FAST EXIT)
+    // ---------------------------
+    const coordMatch = query.match(/^\s*(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)\s*$/);
+    if (coordMatch) {
+        const lat = parseFloat(coordMatch[1]);
+        const lon = parseFloat(coordMatch[3]);
         return [{
-            name: `Pinned location`,
-            display_name: `${lat.toFixed(5)}, ${lon.toFixed(5)}`,
+            name: "Pinned location",
+            display_name: `${lat.toFixed(6)}, ${lon.toFixed(6)}`,
             lat, lon,
-            distanceKm: getDistanceFromLatLonInKm(center.lat, center.lng, lat, lon),
-            score: 9999,
-            isCoordinate: true
+            score: 10000
         }];
     }
-    if (lastSearchController) lastSearchController.abort();
-    lastSearchController = new AbortController();
-    const signal = lastSearchController.signal;
 
-    // ---- API calls ----
-    const sources = [
-        safeFetch(`https://photon.komoot.io/api/?q=${encoded}&lat=${center.lat}&lon=${center.lng}&limit=20`).then(r => r.json()).catch(() => null),
-        safeFetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encoded}&limit=20&accept-language=en`).then(r => r.json()).catch(() => null),
-        safeFetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encoded}&limit=20&accept-language=auto`).then(r => r.json()).catch(() => null),
-        safeFetch(`https://en.wikipedia.org/w/api.php?action=query&prop=coordinates&format=json&origin=*&list=search&srsearch=${encoded}`).then(r => r.json()).catch(() => null)
-    ];
+    // ---------------------------
+    // NORMALIZATION + TYPO TOOLS
+    // ---------------------------
+    const normalize = s =>
+        s.toLowerCase()
+         .normalize("NFD")
+         .replace(/[\u0300-\u036f]/g, "")
+         .replace(/[^a-z0-9 ]/g, "")
+         .trim();
 
-    const responses = await Promise.allSettled(sources);
+    const qNorm = normalize(query);
 
-    // ---- Parse results ----
-    for (const r of responses) {
-        if (r.status !== "fulfilled" || !r.value) continue;
-
-        // Photon
-        if (r.value.features) {
-            r.value.features.forEach(f => {
-                results.push({
-                    name: f.properties.name || "",
-                    display_name: `${f.properties.name}, ${f.properties.city || ""}, ${f.properties.state || ""}, ${f.properties.country || ""}`,
-                    lat: f.geometry.coordinates[1],
-                    lon: f.geometry.coordinates[0],
-                    source: "photon",
-                    score: 2
-                });
-            });
-        }
-
-        // Nominatim
-        if (Array.isArray(r.value)) {
-            r.value.forEach(f => {
-                results.push({
-                    name: f.display_name.split(",")[0],
-                    display_name: f.display_name,
-                    lat: parseFloat(f.lat),
-                    lon: parseFloat(f.lon),
-                    source: "nominatim",
-                    score: 5
-                });
-            });
-        }
-
-        // Wikipedia (with coordinates)
-        if (r.value?.query?.search) {
-            for (const item of r.value.query.search) {
-                const title = item.title;
-
-                const coordsReq = await fetch(`https://en.wikipedia.org/w/api.php?action=query&prop=coordinates&format=json&origin=*&titles=${title}`);
-                const coordJson = await coordsReq.json();
-
-                const key = Object.keys(coordJson.query.pages)[0];
-                const coords = coordJson.query.pages[key]?.coordinates?.[0];
-
-                if (coords) {
-                    results.push({
-                        name: title,
-                        display_name: `${title} (Wikipedia)`,
-                        lat: coords.lat,
-                        lon: coords.lon,
-                        source: "wikipedia",
-                        score: 7
-                    });
-                }
+    function levenshtein(a, b) {
+        const m = a.length, n = b.length;
+        const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+        for (let i = 0; i <= m; i++) dp[i][0] = i;
+        for (let j = 0; j <= n; j++) dp[0][j] = j;
+        for (let i = 1; i <= m; i++) {
+            for (let j = 1; j <= n; j++) {
+                dp[i][j] = Math.min(
+                    dp[i-1][j] + 1,
+                    dp[i][j-1] + 1,
+                    dp[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1)
+                );
             }
         }
+        return dp[m][n];
     }
 
-    // ---- Compute distances ----
-    results.forEach(r => {
-        r.distanceKm = getDistanceFromLatLonInKm(center.lat, center.lng, r.lat, r.lon);
+    function similarity(a, b) {
+        if (!a || !b) return 0;
+        if (a === b) return 1;
+        const d = levenshtein(a, b);
+        return 1 - Math.min(d / Math.max(a.length, b.length), 1);
+    }
+
+    function haversine(lat1, lon1, lat2, lon2) {
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a =
+            Math.sin(dLat / 2) ** 2 +
+            Math.cos(lat1 * Math.PI / 180) *
+            Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) ** 2;
+        return 2 * EARTH_R * Math.asin(Math.sqrt(a));
+    }
+
+    // ---------------------------
+    // PARALLEL DATA SOURCES
+    // ---------------------------
+    const encoded = encodeURIComponent(query);
+
+    const calls = [
+        fetch(`https://photon.komoot.io/api/?q=${encoded}&lat=${center.lat}&lon=${center.lng}&limit=25`, { signal })
+            .then(r => r.json()).catch(() => null),
+
+        fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encoded}&limit=25&accept-language=en`, { signal })
+            .then(r => r.json()).catch(() => null),
+
+        fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encoded}&format=json&origin=*`, { signal })
+            .then(r => r.json()).catch(() => null)
+    ];
+
+    const [photon, nominatim, wiki] = await Promise.all(calls);
+
+    let raw = [];
+
+    // ---------------------------
+    // PARSE PHOTON (POI / ROADS)
+    // ---------------------------
+    if (photon?.features) {
+        photon.features.forEach(f => {
+            raw.push({
+                name: f.properties.name || "",
+                display_name: [
+                    f.properties.name,
+                    f.properties.city,
+                    f.properties.state,
+                    f.properties.country
+                ].filter(Boolean).join(", "),
+                lat: f.geometry.coordinates[1],
+                lon: f.geometry.coordinates[0],
+                source: "photon"
+            });
+        });
+    }
+
+    // ---------------------------
+    // PARSE NOMINATIM (ADDRESSES)
+    // ---------------------------
+    if (Array.isArray(nominatim)) {
+        nominatim.forEach(n => {
+            raw.push({
+                name: n.display_name.split(",")[0],
+                display_name: n.display_name,
+                lat: +n.lat,
+                lon: +n.lon,
+                source: "nominatim"
+            });
+        });
+    }
+
+    // ---------------------------
+    // PARSE WIKIPEDIA (LANDMARKS)
+    // ---------------------------
+    if (wiki?.query?.search) {
+        wiki.query.search.slice(0, 6).forEach(w => {
+            raw.push({
+                name: w.title,
+                display_name: `${w.title}`,
+                lat: null,
+                lon: null,
+                source: "wiki"
+            });
+        });
+    }
+
+    // ---------------------------
+    // ENRICH WIKI WITH COORDS
+    // ---------------------------
+    for (const r of raw) {
+        if (r.source === "wiki" && r.lat == null) {
+            try {
+                const geo = await fetch(
+                    `https://en.wikipedia.org/w/api.php?action=query&prop=coordinates&format=json&origin=*&titles=${encodeURIComponent(r.name)}`
+                ).then(x => x.json());
+                const p = geo.query.pages[Object.keys(geo.query.pages)[0]];
+                if (p?.coordinates?.[0]) {
+                    r.lat = p.coordinates[0].lat;
+                    r.lon = p.coordinates[0].lon;
+                }
+            } catch {}
+        }
+    }
+
+    // ---------------------------
+    // FILTER INVALID
+    // ---------------------------
+    raw = raw.filter(r => r.lat != null && r.lon != null);
+
+    // ---------------------------
+    // SCORING (INTENT + TYPO)
+    // ---------------------------
+    const scored = raw.map(r => {
+        const nameN = normalize(r.name);
+        const fullN = normalize(r.display_name);
+        const sim =
+            Math.max(
+                similarity(nameN, qNorm),
+                similarity(fullN, qNorm)
+            );
+
+        const distKm = haversine(center.lat, center.lng, r.lat, r.lon);
+
+        let score = 0;
+        score += sim * 140;
+        // soft distance decay (not cutoff)
+        score += Math.max(0, 60 - Math.min(distKm, 60));
+        // intent override
+        if (isStrongGlobalIntent(sim, distKm)) {
+            score += 120;
+        }
+        if (distKm < 2) score += 25;
+        if (r.source === "photon") score += 10;
+        if (r.source === "wiki") score += 5;
+
+        return { ...r, score, distKm };
     });
+    // --------------------------- // NEAREST-FIRST HARD GATE // --------------------------- 
+    let local = scored.filter(r => r.distKm <= LOCAL_RADIUS_KM);
 
-    // ---- NLP similarity scoring ----
-    const normalize = t => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const normQuery = normalize(query);
+    // 🔥 detect strong global intent anywhere
+    const allowGlobal = scored.some(r =>
+        isStrongGlobalIntent(
+            Math.max(
+                similarity(normalize(r.name), qNorm),
+                similarity(normalize(r.display_name), qNorm)
+            ),
+            r.distKm
+        )
+    );
 
-    results.forEach(r => {
-        const nTitle = normalize(r.name);
-        const nFull = normalize(r.display_name);
+    // If intent is global → do NOT restrict by radius
+    if (allowGlobal) {
+        local = scored;
+    }
 
-        if (nTitle === normQuery) r.score += 20;
-        if (nFull.includes(normQuery)) r.score += 10;
-        if (nTitle.startsWith(normQuery)) r.score += 7;
+    // fallback safety
+    if (!local.length) local = scored;
 
-        // special: if it's near user → boost for local
-        if (r.distanceKm < 5) r.score += 10;
-        if (r.distanceKm < 1) r.score += 20;
-    });
-
-    // ---- Deduplicate by coordinate ----
+    // ---------------------------
+    // DEDUP BY COORD
+    // ---------------------------
     const seen = new Set();
-    results = results.filter(r => {
-        const key = `${r.lat.toFixed(4)},${r.lon.toFixed(4)}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-    });
-
-    // ---- Local / Global behavior ----
-    const localResults = results.filter(r => r.distanceKm <= SEARCH_RADIUS_KM);
-    const globalResults = results.filter(r => r.distanceKm > SEARCH_RADIUS_KM);
-
-    let final;
-
-    if (isGlobalQuery && globalResults.length > 0) {
-        // Query clearly global → show exact foreign result first
-        final = [...globalResults, ...localResults];
-    } else if (localResults.length > 0) {
-        // Local intent → only nearby
-        final = localResults;
-    } else {
-        // Fallback if nothing local
-        final = results;
+    const final = [];
+    for (const r of local) {
+        const k = `${r.lat.toFixed(4)},${r.lon.toFixed(4)}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        final.push(r);
     }
 
-    // ---- Final Sort ----
-    final.sort((a, b) => b.score - a.score || a.distanceKm - b.distanceKm);
+    // ---------------------------
+    // FINAL SORT + LIMIT
+    // ---------------------------
+    final.sort((a, b) => b.score - a.score || a.distKm - b.distKm);
+    const out = final.slice(0, HARD_LIMIT);
 
-    return final.slice(0, RESULT_LIMIT);
+    __searchCache.set(cacheKey, out);
+    // 🔒 If a newer search started or input was cleared → discard
+    if (seq !== __searchSeq || !input.value.trim()) {
+        return [];
+    }
+    return out;
 }
 
 // Fuzzy matching scorer
@@ -2630,15 +3027,20 @@ input.oninput = () => {
   if (searchTimer) clearTimeout(searchTimer);
   
   // ✅ FIX: Explicitly clear pins if input is empty
-  if (!q) { 
-      suggestBox.style.display = "none"; 
-      clearSearchPins(); 
-      return; 
+  if (!q) {
+      __searchSeq++;              // 🔒 invalidate all pending searches
+      if (__searchAbort) __searchAbort.abort();
+      suggestBox.style.display = "none";
+      clearSearchPins();
+      results = [];
+      return;
   }
 
   searchTimer = setTimeout(async () => {
     const data = await getSearchResults(q); 
     results = data; 
+    lastSearchResults = data;
+    renderSuggestions(data);
     suggestBox.innerHTML = "";
     
     if (!data.length) { 
@@ -2751,7 +3153,35 @@ function showSearchPins(list) {
         map.fitBounds(group.getBounds().pad(0.2));
     }
 }
-document.addEventListener("click", e => { if (!suggestBox.contains(e.target) && e.target !== input) suggestBox.style.display = "none"; });
+let lastSearchResults = [];
+
+input.addEventListener("focus", () => {
+    if (lastSearchResults.length) {
+        renderSuggestions(lastSearchResults);
+        suggestBox.style.display = "block";
+    }
+});
+
+function renderSuggestions(data) {
+    suggestBox.innerHTML = "";
+    data.forEach((f, i) => {
+        const div = document.createElement("div");
+        div.className = "universal-suggest-item";
+        div.innerHTML = `<b>${i + 1}. ${f.name}</b><div class="subtext">${f.display_name}</div>`;
+        div.onclick = () => selectResult(i);
+        suggestBox.appendChild(div);
+    });
+}
+document.addEventListener("click", e => {
+    if (
+        !suggestBox.contains(e.target) &&
+        !input.contains(e.target) &&
+        !document.getElementById("searchContainer").contains(e.target)
+    ) {
+        suggestBox.style.display = "none";
+    }
+});
+
 function selectResult(i) {
     const f = results[i];
     if (!f) return;
@@ -2784,3 +3214,5 @@ micBtn.onclick = async () => {
 </script>
 </body>
 </html>
+
+

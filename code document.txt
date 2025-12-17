@@ -1,346 +1,271 @@
+________________________________________
+📘 PROJECT DOCUMENTATION
+Project: Location-First AI Navigation System (Leaflet + OSRM)
+File Type: Single-page Web Application (HTML + CSS + JavaScript)
+Purpose: Real-time GPS navigation with AI driving assistance, voice guidance, rerouting, eco-tips, and Google-Maps-style UX.
+________________________________________
+1⃣ HIGH-LEVEL SYSTEM OVERVIEW
+This system is a client-side navigation engine that:
+• Tracks real-time user GPS
+• Displays a rotating, compass-based map
+• Builds routes using OSRM (Open Source Routing Machine)
+• Generates step-by-step navigation instructions
+• Monitors driver behavior (speed, route deviation)
+• Gives AI-based eco driving suggestions
+• Automatically reroutes if driver goes off-route
+• Supports manual map selection, search, and voice input
+
+________________________________________
+3⃣ MAIN SYSTEM STATES
+State	Description
+Idle	User moving without navigation
+Preview	Destination selected but not started
+Navigation	Active route guidance
+Rerouting	Off-route detected
+Arrival	Destination reached
+________________________________________
+4⃣ GLOBAL VARIABLES (SYSTEM MEMORY)
+Navigation State:
+Variable	Purpose
+routes[]	Stores all active routes
+activeRouteIndex	Which route is currently followed
+currentStepIndex	Current navigation instruction
+waypoints[]	Ordered navigation points
+waypointMarkers[]	Map markers for waypoints
+
+GPS / Motion:
+Variable	Purpose
+userMarker	Vehicle position on map
+lastHeading	Direction of movement
+useVirtualGPS	Simulated GPS fallback
+
+
+AI / Speech:
+Variable	Purpose
+SPEECH	Speech state, cooldowns, memory
+announcedSteps	Prevents repeat announcements
+________________________________________
+5⃣ FUNCTION-BY-FUNCTION DOCUMENTATION
+________________________________________
+🔹 safeFetch(url, retries):
+Purpose
+Controls API calls safely by queuing requests and preventing overload.
+Inputs
+• url → API endpoint
+• retries → Retry count
+Source of Inputs
+Called by routing, elevation, and search systems.
+Outputs
+• Returns a resolved fetch() response
+• Or rejects on failure
+Used By
+• OSRM routing
+• Elevation API
+• Search APIs
+
+________________________________________
+🔹 processQueue()  :
+Purpose
+Executes queued API calls one-by-one with rate limiting.
+Inputs
+None (uses global request queue)
+Outputs
+• API responses processed safely
+Used By
+• safeFetch()
+
+________________________________________
+🔹 aiBoxShow(kind, text)  :
+Purpose
+Updates the AI tip banner at the top of the UI.
+Inputs
+• kind → eco / step / warning
+• text → Message to show
+Outputs
+• Updates DOM element #ai-tip
+Used By
+• Speech system
+• Eco advisor
+• Step announcements
+
+________________________________________
+🔹 speak(text, kind, options)  :
+Purpose
+Plays voice instructions using Web Speech API.
+Inputs
+• text → Speech content
+• kind → eco / step / warning
+• options.interrupt → Cancel previous speech
+Outputs
+• Audible voice output
+• Updates speech memory
+Used By
+• Navigation steps
+• Speed warnings
+• Eco tips
+
+________________________________________
+🔹 buildPreviewRoute(startLL, endLL, label)  :
+Purpose
+Creates a temporary route preview before navigation starts.
+Inputs
+• startLL → Starting LatLng
+• endLL → Destination LatLng
+• label → Destination name
+Outputs
+• Blue preview polyline
+• Distance & duration shown in approval panel
+Used By
+• Search selection
+• Map click selection
+________________________________________
+🔹 openPreviewTo(latlng, label, addMarker)
+Purpose
+Handles destination selection & confirmation workflow.
+Inputs
+• latlng → Selected point
+• label → Name
+• addMarker → Boolean
+Outputs
+• Popup marker
+• Voice confirmation
+• Preview route created
+Used By
+• Search results
+• Map click
+• Voice search
+
+________________________________________
+🔹 createRoute(start, end, color, marker)  :
+Purpose
+Creates a final navigable route using OSRM.
+Inputs
+• start → Start point
+• end → End point
+• color → Route color
+• marker → Destination marker
+Outputs
+• OSRM route control
+• Step list UI
+• Step polylines
+• Voice instruction
+Used By
+• Approval panel
+• GM route panel
+
+________________________________________
+🔹 adaptiveAIDashboard(latlng, heading)  :
+Purpose
+Central AI brain that updates everything every second.
+Inputs
+• latlng → Current position
+• heading → Movement direction
+Outputs
+• Speed UI
+• Gear UI
+• Throttle UI
+• Eco advice
+• Warnings
+• Step tracking
+Used By
+• GPS watcher
+• Virtual GPS
+
+________________________________________
+🔹 calculateGPSSpeed(latlng)  : 
+Purpose
+Calculates speed based on GPS movement.
+Inputs
+• latlng → Current position
+Outputs
+• Speed in km/h
+Used By
+• Eco advisor
+• Speed warnings
+• Road type detection
+________________________________________
+🔹 ecoAdvisor(distance, slope)  : 
+Purpose
+Generates eco-driving recommendations.
+Inputs
+• distance → Lookahead distance
+• slope → Road gradient
+Outputs
+• Recommended speed
+• Gear
+• Throttle
+• Tip text
+Used By
+• AI dashboard
+• Voice system
+
+________________________________________
+🔹 predictElevationAhead(latlng, heading)  :  
+Purpose
+Predicts upcoming slope using Open-Elevation API.
+Inputs
+• latlng
+• heading
+Outputs
+• Elevation array
+• Average slope
+Used By
+• Eco advisor
+________________________________________
+🔹 smartStepAdvancement(latlng)
+Purpose
+Detects which navigation step the driver is actually on.
+Inputs
+• latlng
+Outputs
+• Updates current step
+• Skips missed steps
+• Announces correct instruction
+Used By
+• AI dashboard
+________________________________________
+🔹 checkUpcomingSteps(latlng)  : 
+Purpose
+Announces upcoming turns in advance.
+Inputs
+• latlng
+Outputs
+• Voice instruction when within range
+Used By
+• Navigation loop
+________________________________________
+🔹 safeReroute(route, currentLL)  :
+Purpose
+Recalculates route when driver goes off-path.
+Inputs
+• route → Active route object
+• currentLL → Current position
+Outputs
+• New route
+• Reset steps
+• Voice announcement
+Used By
+• Off-route detection logic
+________________________________________
+🔹 getSearchResults(query)  : 
+Purpose
+Next-gen search engine (Photon + Nominatim + Wikipedia).
+Inputs
+• query → User text
+Outputs
+• Ranked location results
+Used By
+• Search bar
+• GM route panel
+
+________________________________________
+7⃣ WHY THIS DESIGN IS CORRECT
+✔ Location-first (not instruction-first)
+✔ Prevents step mismatch
+✔ API-safe (rate-limited)
+✔ Works offline partially
+✔ Scalable for future AI models
+✔ Clean separation of concerns
+________________________________________
 
 
-# Technical Documentation: Adaptive Location-First Navigation System
-
-1. Global API & Networking Control
-
-Chunk Purpose: To manage external API calls (OSRM, Overpass, Nominatim) to prevent rate-limiting and browser freezing.
-
-### `safeFetch(url, retries)`
-
-1. **Purpose:** Adds a network request to a managed queue system rather than executing it immediately. It acts as a wrapper around the standard `fetch` API to handle rate limits (429 errors) and timeouts.
-2. **Inputs:**
-* `url` (String): The API endpoint to fetch.
-* `retries` (Number, default 2): How many times to retry if the request fails.
-
-
-3. **Outputs:**
-* **Returns:** A `Promise` that resolves when the queue processes this specific request.
-* **Effect:** Pushes an object `{url, retries, resolve, reject}` into the global `requestQueue` array.
-
-
-
-### `processQueue()`
-
-1. **Purpose:** The worker function that processes the `requestQueue`. It ensures only `MAX_REQUESTS` (6) are active at once and adds a `REQUEST_DELAY` (120ms) between batches.
-2. **Inputs:**
-* Reads from global `requestQueue` array.
-* Reads global `activeRequests` counter.
-
-
-3. **Outputs:**
-* **Effect:** Executes the actual `fetch()` call.
-* **Updates:** Increments/decrements `activeRequests`.
-* **Destination:** Resolves the Promise created in `safeFetch`, passing data back to the calling function (e.g., `updateSpeedLimit`).
-
-
-
----
-
-## 2. User Interface (UI) & Speech Systems
-
-**Chunk Purpose:** Handles visual feedback (speedometer, alerts) and auditory feedback (TTS).
-
-### `aiBoxShow(kind, text)`
-
-1. **Purpose:** Updates the top "AI Tip Box" (yellow/orange banner) with warnings, step instructions, or eco-driving tips.
-2. **Inputs:**
-* `kind` (String): Type of message ("warning", "step", "eco").
-* `text` (String): The content to display.
-
-
-3. **Outputs:**
-* **DOM Update:** Changes `document.getElementById("ai-tip").textContent`.
-* **State Update:** Updates global `SPEECH.currentDisplay` to track what is currently shown.
-
-
-
-### `speak(text, kind, {interrupt})`
-
-1. **Purpose:** A wrapper for the browser's `speechSynthesis` API. It handles voice announcements for navigation and safety.
-2. **Inputs:**
-* `text` (String): The phrase to speak.
-* `kind` (String): Priority level ("warning", "step", "eco").
-* `interrupt` (Boolean): If `true`, cancels current speech immediately (used for urgent warnings).
-
-
-3. **Outputs:**
-* **Audio:** Triggers device speakers via `speechSynthesis.speak()`.
-* **Effect:** Updates timestamps (`lastStepSpokenAt`, `lastEcoSpokenAt`) to prevent repetitive talking.
-
-
-
-### `refreshAIBox()`
-
-1. **Purpose:** Determines what to show in the AI box after a temporary warning (like "Speed Limit Exceeded") has finished displaying.
-2. **Inputs:**
-* Reads global `SPEECH` state (last step text, last eco text).
-
-
-3. **Outputs:**
-* **Effect:** Calls `aiBoxShow()` to revert the display to the most relevant information (usually the current navigation step).
-
-
-
----
-
-## 3. Core Routing & Navigation Logic
-
-**Chunk Purpose:** Calculating paths, drawing lines, and managing the OSRM interaction.
-
-### `OSRM_ROUTER.buildRouteUrl(waypoints, options)`
-
-1. **Purpose:** Overrides the default Leaflet Routing Machine URL builder to ensure requests go to the correct OSRM endpoint (`/driving/`) with specific parameters for geometries and steps.
-2. **Inputs:**
-* `waypoints` (Array): Lat/Lng objects from the map.
-
-
-3. **Outputs:**
-* **Returns:** A formatted String URL for the OSRM API (e.g., `https://router.project-osrm.org/...`).
-* **Destination:** Used internally by the `OSRM_ROUTER` instance to fetch data.
-
-
-
-### `buildPreviewRoute(startLL, endLL, labelText)`
-
-1. **Purpose:** Calculates a route *without* starting navigation. It draws a blue preview line and opens the "Approval Panel" (Start/Cancel).
-2. **Inputs:**
-* `startLL` (LatLng): User's current location.
-* `endLL` (LatLng): The clicked destination.
-* `labelText` (String): Name of the destination.
-
-
-3. **Outputs:**
-* **API Call:** Triggers `OSRM_ROUTER.route()`.
-* **DOM Update:** Populates `#approvalPanel` with distance/duration.
-* **Map Update:** Draws a temporary blue polyline (`preview.polyline`) on the map.
-
-
-
-### `createRoute(start, end, color, marker, index)`
-
-1. **Purpose:** Finalizes the route logic when "Start" is clicked. It creates the persistent routing control, the turn-by-turn text box, and the visual route line.
-2. **Inputs:**
-* `start`, `end`: Coordinates.
-* `color`: Hex code for the route line.
-* `index`: ID for managing multiple routes.
-
-
-3. **Outputs:**
-* **Object Creation:** Creates a `L.Routing.control` instance.
-* **Global Update:** Pushes a new route object into the `routes[]` array.
-* **DOM Update:** Appends a new route instruction box to `#routePanel`.
-
-
-
-### `cleanupRoute(route)`
-
-1. **Purpose:** Removes a specific route from memory and the map when the destination is reached or the user cancels.
-2. **Inputs:**
-* `route` (Object): The specific route object from the `routes` array.
-
-
-3. **Outputs:**
-* **Map Update:** Removes `route.group` (lines/arrows) and `route.rc` (control) from the map.
-* **DOM Update:** Removes the corresponding HTML instruction box.
-* **Global Update:** Splices the route out of the `routes` array.
-
-
-
----
-
-## 4. Telemetry & Driving Physics
-
-**Chunk Purpose:** Calculating speed, road type, and eco-driving metrics.
-
-### `calculateGPSSpeed(latlng)`
-
-1. **Purpose:** Calculates the vehicle's speed in km/h based on the distance moved since the last GPS update.
-2. **Inputs:**
-* `latlng` (Object): Current coordinates.
-* Global `window._lastGPSPos` and `window._lastGPSTime`.
-
-
-3. **Outputs:**
-* **Returns:** Number (Speed in km/h).
-* **Destination:** Used by `getRoadType` and `adaptiveAIDashboard`.
-
-
-
-### `getRoadType(latlng)`
-
-1. **Purpose:** Infers the type of road (Highway, City, Residential) based on the vehicle's current speed.
-2. **Inputs:**
-* `latlng`: Used to get speed from `calculateGPSSpeed`.
-
-
-3. **Outputs:**
-* **Returns:** String ("highway", "city", etc.).
-* **Global Update:** Sets `currentRoadType`.
-
-
-
-### `ecoAdvisor(distAhead, slope)`
-
-1. **Purpose:** Algorithm that recommends Gear, Throttle, and Speed based on the road type and slope.
-2. **Inputs:**
-* `currentRoadType` (Global String).
-* `slope` (Number): Percentage slope derived from elevation data.
-
-
-3. **Outputs:**
-* **Returns:** Object `{ speed, gear, throttle, tip, slope }`.
-* **Destination:** Used to update the "Stats Row" (Speed/Gear/Throttle UI).
-
-
-
-### `updateSpeedLimit(latlng)`
-
-1. **Purpose:** Fetches the real-world speed limit for the current road using the Overpass (OpenStreetMap) API.
-2. **Inputs:**
-* `latlng`: Current user location.
-
-
-3. **Outputs:**
-* **DOM Update:** Updates `#speedLimit` text content (e.g., "60 km/h").
-* **State Update:** Sets `lastSpeedLimit` global variable used for speeding warnings.
-
-
-
----
-
-## 5. Main AI Loop & Step Logic
-
-**Chunk Purpose:** The "Brain" of the system. Runs continuously to update the map and instructions.
-
-### `adaptiveAIDashboard(latlng, heading)`
-
-1. **Purpose:** The central controller function called every 900ms. It aggregates data from all other modules (speed, slope, routing, warnings) and updates the UI.
-2. **Inputs:**
-* `latlng`: Current position.
-* `heading`: Compass direction.
-
-
-3. **Outputs:**
-* **DOM Update:** Updates Speed, Gear, Throttle HTML elements.
-* **Triggers:** Calls `smartStepAdvancement` (to check if we passed a turn) and `checkWarnings` (speeding checks).
-* **Triggers:** Calls `triggerReroute` if the user is off the path.
-
-
-
-### `smartStepAdvancement(latlng)`
-
-1. **Purpose:** Determines if the driver has completed the current navigation step (e.g., "Turn Left"). It handles logic for jumping steps if the driver missed one.
-2. **Inputs:**
-* `latlng`: Current position.
-* `activeRouteIndex`: Which route is currently being followed.
-
-
-3. **Outputs:**
-* **Effect:** Increments `currentStepIndex`.
-* **Visuals:** Fades out the navigation line for the completed segment using `fadeOutStepLine`.
-* **Speech:** Triggers `speak()` for the *next* instruction.
-
-
-
-### `findCurrentStepByLocation(latlng, route)`
-
-1. **Purpose:** A recovery function. If the step counter gets out of sync, this calculates which step represents the driver's *actual* physical location.
-2. **Inputs:**
-* `latlng`: Driver location.
-* `route`: The route data object containing all step coordinates.
-
-
-3. **Outputs:**
-* **Returns:** Object `{ index, distance }` representing the closest valid step.
-* **Destination:** Used by `smartStepAdvancement` to correct the UI.
-
-
-
-### `rotateTowardRoute()`
-
-1. **Purpose:** Rotates the map view so the road ahead is always pointing "Up" (Head-up display style), rather than North-up.
-2. **Inputs:**
-* Global `routes` array.
-* `currentStepIndex`: To know which road segment we are on.
-
-
-3. **Outputs:**
-* **Map Interaction:** Calls `map.setBearing()` to animate the rotation.
-
-
-
----
-
-## 6. Search & Geocoding
-
-**Chunk Purpose:** Converting user text into coordinates and showing results.
-
-### `getSearchResults(query)`
-
-1. **Purpose:** A powerful search engine that queries three sources simultaneously: Photon (Search as you type), Nominatim (Addresses), and Wikipedia (Landmarks). It scores results to find the "best match."
-2. **Inputs:**
-* `query` (String): User input from the search bar.
-
-
-3. **Outputs:**
-* **Returns:** Array of result objects `{name, lat, lon, score}` sorted by relevance and distance.
-* **Destination:** Used by `renderSuggestions` and `showSearchPins`.
-
-
-
-### `showSearchPins(list)`
-
-1. **Purpose:** Renders numbered pins on the map for search results.
-2. **Inputs:**
-* `list` (Array): The results from `getSearchResults`.
-
-
-3. **Outputs:**
-* **Map Update:** Adds `L.marker` layers to the map.
-* **DOM Creation:** Creates popups containing an "Add to Route" button and fetches an image (via `fetchLocationImage`) for the location.
-
-
-
-### `fetchLocationImage(query)`
-
-1. **Purpose:** Fetches a thumbnail image from Wikipedia for a specific search result to make the UI look better.
-2. **Inputs:**
-* `query` (String): Name of the location (e.g., "Taj Mahal").
-
-
-3. **Outputs:**
-* **Returns:** String (URL of the image) or `null`.
-* **DOM Update:** Injects the image into the map popup.
-
-
-
----
-
-## 7. Visuals & Animations
-
-**Chunk Purpose:** Making the map look like a modern GPS app.
-
-### `addGoogleStyleRoadArrows(coords, group)`
-
-1. **Purpose:** Analyzes the geometry of the route to place "Smart Arrows" on the road. It detects curves to choose between straight, slight-left, or sharp-left arrows.
-2. **Inputs:**
-* `coords` (Array): The list of Lat/Lng points for the route.
-* `group` (LayerGroup): The Leaflet layer to add arrows to.
-
-
-3. **Outputs:**
-* **Map Update:** Adds custom SVG markers (arrows) rotated to match the road bearing.
-
-
-
-### `animateMarker(timestamp)`
-
-1. **Purpose:** Interpolates the car icon's position between GPS updates to make the movement look smooth instead of "jumping" every second.
-2. **Inputs:**
-* `timestamp`: Provided by `requestAnimationFrame`.
-* Global `startLatLng` and `targetLatLng`.
-
-
-3. **Outputs:**
-* **Map Update:** Calls `userMarker.setLatLng()` roughly 60 times per second for fluid motion.

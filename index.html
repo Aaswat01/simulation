@@ -1247,14 +1247,10 @@ if (navigator.geolocation){
     lastHeading = heading;
     if(!userMarker){
       userMarker = L.marker(latlng,{icon:carIcon}).addTo(map);
+      map.setView(latlng, 19);
     } else {
       userMarker.setLatLng(latlng);
     }
-    map.setView(
-      latlng,
-      map.getZoom(),
-      { animate: true, duration: 0.25 }
-    );
     // 🔥 TRIGGER ROTATION UPDATE HERE
     if (autoRotation && activeRouteIndex !== null) {
         rotateTowardRoute();

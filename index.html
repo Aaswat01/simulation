@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>test5</title>
+<title>test6</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css"/>
 <style>
@@ -685,7 +685,6 @@ const map = L.map('map', {
 // 🔝 Dedicated pane so route line never hides
 map.createPane("routePane");
 map.getPane("routePane").style.zIndex = 450;
-
 
 let autoCenter = true;
 const nightMap = L.tileLayer(
@@ -2129,6 +2128,7 @@ async function createRoute(start, end, color, marker = null, index = null) {
       const validEnd = Math.min(idxEnd, coords.length - 1);
       const segmentCoords = coords.slice(idxStart, validEnd + 1);
       const elev = elevs[idxStart] || 0;
+
       // Draw visual line for this step
       const stepLine = L.polyline(segmentCoords, {
         color: routeColor,
@@ -2147,19 +2147,10 @@ async function createRoute(start, end, color, marker = null, index = null) {
 
       // Hover Effect
       item.addEventListener("mouseenter", () => {
-        stepLine.setStyle({
-          color: "#00FF00",
-          weight: 9,
-          opacity: 1
-        });
+          stepLine.setStyle({ color: "#00FF00", weight: 9, opacity: 1 });
       });
-
       item.addEventListener("mouseleave", () => {
-        stepLine.setStyle({
-          color: routeColor,
-          weight: 6,
-          opacity: 0.8
-        });
+          stepLine.setStyle({ color: routeColor, weight: 6, opacity: 0.8 });
       });
 
       steps.push({
@@ -2169,6 +2160,7 @@ async function createRoute(start, end, color, marker = null, index = null) {
         elev,
         distance: s.distance,
         element: item,
+        
       });
     });
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>test4</title>
+<title>test3</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css"/>
 <style>
@@ -774,8 +774,7 @@ let __searchSeq = 0;   // 🔒 hard cancel token
 // 🔒 Track all arrow decorators for rotation cancel
 const STATIC_ROUTE_DECORATORS = [];
 let lockRouteNorthUp = true;   // ⬅️ NEW
-const POST_REROUTE_GRACE = 8000; // 8s no reroute after rebuild
-let lastRerouteCompletedAt = 0;
+
 
 async function safeFetch(url, retries = 2) {
     return new Promise((resolve, reject) => {
@@ -1599,55 +1598,66 @@ function checkUpcomingSteps(latlng) {
 }
 
 function cleanupRoute(route) {
-  // 1. Identify the specific index being removed
-  const rid = route.routeIndex;
-  console.log(`Cleaning up route at index: ${rid}`);
 
-  // 2. Stop any pending reroutes or logic
-  route.completed = true; 
-
-  // 3. Remove visuals safely
+  // remove visuals
   try { map.removeControl(route.rc); } catch {}
   try { map.removeLayer(route.group); } catch {}
 
-  // 4. Remove the CORRECT destination marker
-  // We use rid because waypointMarkers[0] is for Route 0, etc.
-  if (waypointMarkers[rid]) {
-      map.removeLayer(waypointMarkers[rid]);
-      waypointMarkers.splice(rid, 1);
-      // Remove the coordinate from the master list (rid + 1 because index 0 is start)
-      waypoints.splice(rid + 1, 1);
+  // remove ONLY the waypoint that belongs to THIS route
+  const lastStep = route.steps[route.steps.length - 1];
+  const destLL = L.latLng(lastStep.lat, lastStep.lng);
+  
+  let removeIndex = -1;
+  
+  for (let i = 0; i < waypointMarkers.length; i++) {
+      const ll = waypointMarkers[i].getLatLng();
+      if (ll.lat === destLL.lat && ll.lng === destLL.lng) {
+          removeIndex = i;
+          break;
+      }
+  }
+  
+  if (removeIndex !== -1) {
+      try { map.removeLayer(waypointMarkers[removeIndex]); } catch {}
+      waypointMarkers.splice(removeIndex, 1);
+      waypoints.splice(removeIndex + 1, 1);
   }
 
-  // 5. Remove the UI box
-  const box = document.getElementById(`route-box-${rid}`);
+
+  // remove UI box
+  const box = document.getElementById(`route-box-${route.routeIndex}`);
   if (box) box.remove();
 
-  // 6. Remove the route object from the array
-  routes.splice(rid, 1);
+  // remove the finished route from list
+  routes.splice(route.routeIndex, 1);
 
-  // 7. Reset navigation state
+  // 🟢 DO NOT force index 0
   activeRouteIndex = null;
+
+  // 🟢 DO NOT RESET steps globally
   currentStepIndex = 0;
+
   announcedSteps.clear();
   SPEECH.lastStepText = "";
+  SPEECH.lastStepSpokenAt = 0;
+  SPEECH.currentDisplay.kind = "eco";
 
-  // 8. IMPORTANT: Re-index remaining routes so IDs don't break
+  // 🟢 🔥 RE-NORMALIZE routeIndex FOR ALL ROUTES
   routes.forEach((r, i) => {
-      const oldId = r.routeIndex;
       r.routeIndex = i;
-      const b = document.getElementById(`route-box-${oldId}`);
+
+      // fix associated route box id if still on screen
+      const b = document.getElementById(`route-box-${i}`);
       if (b) b.id = `route-box-${i}`;
   });
 
-  rebuildRoutes(); // Refresh the list
+  rebuildRoutes();
   refreshAIBox();
 
-  // 9. Auto-start the next destination if it exists
+  // 🟢 If routes remain → automatically go to next one
   if (routes.length > 0) {
-      activeRouteIndex = 0; 
+      activeRouteIndex = 0;
       currentStepIndex = 0;
-      console.log("Switching to next destination in queue.");
   }
 }
 
@@ -1780,65 +1790,44 @@ function distanceToSegment(p, a, b) {
 // SIMPLE REROUTE — rebuild route from scratch
 // ======================================================
 async function triggerReroute(route, currentLL) {
-    if (!route || route.completed) return;
-
-    // ⛔ prevent parallel reroutes
+    if (route.completed) return;   // <<< STOP resurrecting finished route
+    // 🚦 STOP: reroute already happening
     if (route._rerouting) return;
-
-    const now = Date.now();
-    if (now - lastRerouteCompletedAt < POST_REROUTE_GRACE) return;
-
     route._rerouting = true;
-    lastRerouteTime = now;
 
-    const routeIndex = route.routeIndex;
-    const color = route.color || colors[routeIndex % colors.length];
+    lastRerouteTime = Date.now();
+    // destination = last step of route
     const lastStep = route.steps[route.steps.length - 1];
     const destLL = L.latLng(lastStep.lat, lastStep.lng);
 
-    speak("Recalculating route.", "step", { interrupt: true });
+    // keep color + index
+    const routeIndex = route.routeIndex;
+    const color = route.color || colors[routeIndex % colors.length];
 
-    // 🔒 HARD REMOVE OLD VISUALS ONCE
-    try { map.removeControl(route.rc); } catch {}
+    // remove old route layers safely
     try { map.removeLayer(route.group); } catch {}
+    try { map.removeControl(route.rc); } catch {}
 
-    // 🔥 BUILD NEW ROUTE
-    const newRoute = createRoute(
+    // rebuild using SAME route index
+    createRoute(
         currentLL,
         destLL,
         color,
         null,
         routeIndex
     );
-
-    // ⬅️ CRITICAL: carry reroute lock forward
-    newRoute._rerouting = true;
-    newRoute.color = color;
-
-    routes[routeIndex] = newRoute;
-    activeRouteIndex = routeIndex;
-
-    currentStepIndex = 0;
+    activeRouteIndex = route.routeIndex;
+    currentStepIndex = Math.max(0, currentStepIndex - 1); 
     announcedSteps.clear();
+    SPEECH.lastStepText = "";
+    speak("Route updated.", "step", { interrupt: true });
 
-    // 🧭 stabilize rotation
-    autoRotation = true;
-    follow = true;
-    autoCenter = true;
-
-    requestAnimationFrame(() => rotateTowardRoute());
-
+    // recenter + rotate
     forceRecenterToCar(18);
-
-    // 🔓 unlock rerouting AFTER route is stable
-    setTimeout(() => {
-        if (routes[routeIndex]) {
-            routes[routeIndex]._rerouting = false;
-            lastRerouteCompletedAt = Date.now();
-        }
-    }, POST_REROUTE_GRACE);
+    requestAnimationFrame(() => rotateTowardRoute());
+    // unlock after rebuild
+    setTimeout(() => route._rerouting = false, 4000);
 }
-
 
 // ===== Main AI loop =====
 async function adaptiveAIDashboard(latlng, heading) {
@@ -1854,48 +1843,56 @@ async function adaptiveAIDashboard(latlng, heading) {
   UI.speedEl.textContent = `${eco.speed} km/h`;
   UI.gearEl.textContent = `${eco.gear}`;
   UI.throttleEl.textContent = `${eco.throttle}%`;
-  if (activeRouteIndex !== null && routes[activeRouteIndex]) {
+
+  if (activeRouteIndex !== null && routes.length > 0 && routes[activeRouteIndex]) {
     const route = routes[activeRouteIndex];
-    
-    // 🛑 EXIT if route is already marked completed to prevent ghost-rerouting
-    if (route.completed) return;
+    const steps = route.steps;
+    const routeDisplayIndex = route.routeIndex;
 
+    // 🆕 LOCATION-FIRST: Check if driver has jumped to a different step
     smartStepAdvancement(latlng);
+    // 🆕 ROBUST OFF-ROUTE DETECTION
+    if (activeRouteIndex !== null && routes[activeRouteIndex]) {
+        const route = routes[activeRouteIndex];
+        /*** 🚨 AUTO REROUTE ENGINE FIX 🚨 ***/
+        const offDist = getNearestRouteDistance(latlng, route);
+        // Reroute Condition
+        if (!route.completed && offDist > 30) {
+            const now = Date.now();
+            if (now - lastRerouteTime < REROUTE_COOLDOWN) return;
+            lastRerouteTime = now;
 
-    // REROUTE CHECK
-    const offDist = getNearestRouteDistance(latlng, route);
-    if (
-        offDist > 35 &&
-        !route.completed &&
-        !route._rerouting &&
-        Date.now() - lastRerouteCompletedAt > POST_REROUTE_GRACE) {
-        const now = Date.now();
-        if (now - lastRerouteTime > REROUTE_COOLDOWN) {
+            console.warn(`👉 Off-route detected (${offDist.toFixed(1)}m) – rebuilding route...`);
             triggerReroute(route, latlng);
         }
     }
-
+    // 🆕 Check for upcoming step announcements
     checkUpcomingSteps(latlng);
 
-    // Distance calculation logic
-    if (route.steps && route.steps[currentStepIndex]) {
+    // Calculate remaining distance
+    // 🔥 Live updating remaining route distance (GPS based)
+    if (route.steps && route.steps.length) {
         let remainingDist = 0;
-        const curStep = route.steps[currentStepIndex];
-        remainingDist += latlng.distanceTo(L.latLng(curStep.lat, curStep.lng));
 
-        for (let i = currentStepIndex; i < route.steps.length; i++) {
-            remainingDist += route.steps[i].distance;
+        // distance from current location to start of active step
+        const curStep = steps[currentStepIndex];
+        const stepLL = L.latLng(curStep.lat, curStep.lng);
+        remainingDist += latlng.distanceTo(stepLL);
+
+        // total remaining steps
+        for (let i = currentStepIndex; i < steps.length; i++) {
+            remainingDist += steps[i].distance;
         }
 
         const km = (remainingDist / 1000).toFixed(1);
-        const distanceEl = document.getElementById(`route-distance-${route.routeIndex}`);
+        const distanceEl = document.getElementById(`route-distance-${routeDisplayIndex}`);
         if (distanceEl) distanceEl.textContent = `${km} km remaining`;
     }
   }
 
   checkWarnings(currentSpeed, eco);
   maybeSpeakEco(eco);
-  maybeRepeatCurrentStep();
+  maybeRepeatCurrentStep(); // 🆕 remind current step periodically
 }
 // --- Smooth animation for car movement (Google/Waze style) ---
 let lastAnimateTime = 0;
@@ -3086,4 +3083,3 @@ micBtn.onclick = async () => {
 </script>
 </body>
 </html>
-

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>test3</title>
+<title>test5</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css"/>
 <style>
@@ -686,6 +686,7 @@ const map = L.map('map', {
 map.createPane("routePane");
 map.getPane("routePane").style.zIndex = 450;
 
+
 let autoCenter = true;
 const nightMap = L.tileLayer(
   'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
@@ -774,7 +775,7 @@ let __searchSeq = 0;   // 🔒 hard cancel token
 // 🔒 Track all arrow decorators for rotation cancel
 const STATIC_ROUTE_DECORATORS = [];
 let lockRouteNorthUp = true;   // ⬅️ NEW
-
+let GLOBAL_REROUTING = false;
 
 async function safeFetch(url, retries = 2) {
     return new Promise((resolve, reject) => {
@@ -1528,49 +1529,58 @@ function findCurrentStepByLocation(latlng, route) {
 }
 
 // 🆕 SMART STEP ADVANCEMENT
-// Handles skipping missed steps and announcing current location
 function smartStepAdvancement(latlng) {
   if (activeRouteIndex === null || !routes[activeRouteIndex]) return;
+  
   const route = routes[activeRouteIndex];
+  if (route.completed) return;
+
   const steps = route.steps;
-  // Find where driver actually is
   const locationResult = findCurrentStepByLocation(latlng, route);
-  if (locationResult && locationResult.index !== currentStepIndex) {
-    // Driver has moved to a different step!
+
+  // If we found a NEW step that is ahead of the current one
+  if (locationResult && locationResult.index > currentStepIndex) {
     const newStepIndex = locationResult.index;
-    console.log(`🚗 Location jump detected: ${currentStepIndex} → ${newStepIndex}`);  
-    // Mark all skipped steps as completed (hide them)
-    for (let i = currentStepIndex; i < newStepIndex; i++) {
+    console.log(`🚗 Advancing step: ${currentStepIndex} → ${newStepIndex}`);  
+
+    // 1. Hide/Complete all previous steps
+    for (let i = 0; i < newStepIndex; i++) {
         updateStepUI(activeRouteIndex, i, 'completed');
     }   
-    // Update current step
+
+    // 2. Update current step
     currentStepIndex = newStepIndex;
-    announcedSteps.clear(); // Reset announcements 
-    // 🔥 FORCE PATH TO FACE UP ON STEP CHANGE
+    
+    // 3. Force UI update for the new active step
+    updateStepUI(activeRouteIndex, currentStepIndex, 'active');
+
+    // 4. Announce the new step
+    const step = steps[currentStepIndex];
+    if (step && !announcedSteps.has(currentStepIndex)) {
+        const distText = step.distance < 1000 
+          ? `${step.distance.toFixed(0)} meters` 
+          : `${(step.distance / 1000).toFixed(1)} kilometers`;
+        
+        speak(`${step.text}. Proceed for ${distText}.`, "step", { interrupt: true });
+        announcedSteps.add(currentStepIndex);
+    }
+
+    // 5. Rotate map
     if (autoRotation) {
         requestAnimationFrame(() => rotateTowardRoute());
     }
+  }
 
-    // If this is the last step (destination)
-    if (currentStepIndex >= steps.length - 1) {
-      updateStepUI(activeRouteIndex, currentStepIndex, 'completed');
-      speak("Destination reached.", "step", { interrupt: true });
-      UI.aiBox.textContent = "Destination reached ✅";    
-      route.completed = true;
-      setTimeout(() => {
-        cleanupRoute(route);
-      }, 3000);
-      return;
-    } 
-    // Mark current step as active and announce it
-    updateStepUI(activeRouteIndex, currentStepIndex, 'active');
-    const step = steps[currentStepIndex];
-    const distText = step.distance < 1000 
-      ? `${step.distance.toFixed(0)} meters` 
-      : `${(step.distance / 1000).toFixed(1)} kilometers`;
-    const announcement = `${step.text}. Proceed for ${distText}.`;
-    speak(announcement, "step", { interrupt: true });
-    announcedSteps.add(currentStepIndex);
+  // Check for Destination Arrival (Last Step)
+  if (currentStepIndex >= steps.length - 1) {
+      const lastStepLL = L.latLng(steps[steps.length-1].lat, steps[steps.length-1].lng);
+      if (latlng.distanceTo(lastStepLL) < 20) {
+          updateStepUI(activeRouteIndex, currentStepIndex, 'completed');
+          speak("Destination reached.", "step", { interrupt: true });
+          UI.aiBox.textContent = "Destination reached ✅";    
+          route.completed = true;
+          setTimeout(() => cleanupRoute(route), 3000);
+      }
   }
 }
 
@@ -1598,66 +1608,55 @@ function checkUpcomingSteps(latlng) {
 }
 
 function cleanupRoute(route) {
+  // 1. Identify the specific index being removed
+  const rid = route.routeIndex;
+  console.log(`Cleaning up route at index: ${rid}`);
 
-  // remove visuals
+  // 2. Stop any pending reroutes or logic
+  route.completed = true; 
+
+  // 3. Remove visuals safely
   try { map.removeControl(route.rc); } catch {}
   try { map.removeLayer(route.group); } catch {}
 
-  // remove ONLY the waypoint that belongs to THIS route
-  const lastStep = route.steps[route.steps.length - 1];
-  const destLL = L.latLng(lastStep.lat, lastStep.lng);
-  
-  let removeIndex = -1;
-  
-  for (let i = 0; i < waypointMarkers.length; i++) {
-      const ll = waypointMarkers[i].getLatLng();
-      if (ll.lat === destLL.lat && ll.lng === destLL.lng) {
-          removeIndex = i;
-          break;
-      }
-  }
-  
-  if (removeIndex !== -1) {
-      try { map.removeLayer(waypointMarkers[removeIndex]); } catch {}
-      waypointMarkers.splice(removeIndex, 1);
-      waypoints.splice(removeIndex + 1, 1);
+  // 4. Remove the CORRECT destination marker
+  // We use rid because waypointMarkers[0] is for Route 0, etc.
+  if (waypointMarkers[rid]) {
+      map.removeLayer(waypointMarkers[rid]);
+      waypointMarkers.splice(rid, 1);
+      // Remove the coordinate from the master list (rid + 1 because index 0 is start)
+      waypoints.splice(rid + 1, 1);
   }
 
-
-  // remove UI box
-  const box = document.getElementById(`route-box-${route.routeIndex}`);
+  // 5. Remove the UI box
+  const box = document.getElementById(`route-box-${rid}`);
   if (box) box.remove();
 
-  // remove the finished route from list
-  routes.splice(route.routeIndex, 1);
+  // 6. Remove the route object from the array
+  routes.splice(rid, 1);
 
-  // 🟢 DO NOT force index 0
+  // 7. Reset navigation state
   activeRouteIndex = null;
-
-  // 🟢 DO NOT RESET steps globally
   currentStepIndex = 0;
-
   announcedSteps.clear();
   SPEECH.lastStepText = "";
-  SPEECH.lastStepSpokenAt = 0;
-  SPEECH.currentDisplay.kind = "eco";
 
-  // 🟢 🔥 RE-NORMALIZE routeIndex FOR ALL ROUTES
+  // 8. IMPORTANT: Re-index remaining routes so IDs don't break
   routes.forEach((r, i) => {
+      const oldId = r.routeIndex;
       r.routeIndex = i;
-
-      // fix associated route box id if still on screen
-      const b = document.getElementById(`route-box-${i}`);
+      const b = document.getElementById(`route-box-${oldId}`);
       if (b) b.id = `route-box-${i}`;
   });
 
-  rebuildRoutes();
+  rebuildRoutes(); // Refresh the list
   refreshAIBox();
 
-  // 🟢 If routes remain → automatically go to next one
+  // 9. Auto-start the next destination if it exists
   if (routes.length > 0) {
-      activeRouteIndex = 0;
+      activeRouteIndex = 0; 
       currentStepIndex = 0;
+      console.log("Switching to next destination in queue.");
   }
 }
 
@@ -1734,25 +1733,44 @@ function autoRepeatSpeech() {
 // Repeat every 10 seconds
 setInterval(autoRepeatSpeech, 40000);
 
-// 1. HELPER: Calculate distance from car to the route line (in meters)
+// 1. HELPER: Calculate distance from car to the PRECISE route path
 function getNearestRouteDistance(latlng, route) {
-    if (!route || !route.steps || route.steps.length < 2) return 0;
+    // Safety check
+    if (!route || !route.coordinates || route.coordinates.length < 2) return 0;
 
+    const coords = route.coordinates;
     let minDistance = Infinity;
+    
+    // OPTIMIZATION: Only check points near the last known position
+    // If we don't have a last position, check the whole route (first time)
+    let startIndex = 0;
+    let endIndex = coords.length - 1;
 
-    // We only check the current step and the next 5 steps for performance
-    // (checking the whole route every second is too heavy)
-    const lookAhead = Math.min(currentStepIndex + 5, route.steps.length - 1);
-    const startIndex = Math.max(0, currentStepIndex - 1);
-
-    for (let i = startIndex; i < lookAhead; i++) {
-        const p1 = L.latLng(route.steps[i].lat, route.steps[i].lng);
-        const p2 = L.latLng(route.steps[i+1].lat, route.steps[i+1].lng);
-        
-        // Project point onto line segment to get distance
-        const dist = distanceToSegment(latlng, p1, p2);
-        if (dist < minDistance) minDistance = dist;
+    // If we have a previous tracking index, only check 50 points backward and 100 forward
+    if (route.lastClosestIndex !== undefined) {
+        startIndex = Math.max(0, route.lastClosestIndex - 50);
+        endIndex = Math.min(coords.length - 1, route.lastClosestIndex + 100);
     }
+
+    let closestIndex = startIndex;
+
+    for (let i = startIndex; i < endIndex; i++) {
+        // Create Leaflet LatLngs for the segment
+        const p1 = L.latLng(coords[i].lat, coords[i].lng);
+        const p2 = L.latLng(coords[i+1].lat, coords[i+1].lng);
+        
+        // Calculate distance from car to this tiny road segment
+        const dist = distanceToSegment(latlng, p1, p2);
+        
+        if (dist < minDistance) {
+            minDistance = dist;
+            closestIndex = i;
+        }
+    }
+
+    // Update the tracker so next time we don't scan the whole world
+    route.lastClosestIndex = closestIndex;
+    
     return minDistance;
 }
 
@@ -1789,111 +1807,109 @@ function distanceToSegment(p, a, b) {
 // ======================================================
 // SIMPLE REROUTE — rebuild route from scratch
 // ======================================================
+// ======================================================
+// FIXED REROUTE — Global Locking + No Array Destruction
+// ======================================================
 async function triggerReroute(route, currentLL) {
-    if (route.completed) return;   // <<< STOP resurrecting finished route
-    // 🚦 STOP: reroute already happening
-    if (route._rerouting) return;
-    route._rerouting = true;
-
+    // 1. Global Safety Lock (Prevents infinite loops)
+    if (GLOBAL_REROUTING) return;
+    GLOBAL_REROUTING = true;
+    
     lastRerouteTime = Date.now();
-    // destination = last step of route
+    const routeIndex = route.routeIndex;
+    
+    // Calculate destination from the last step of the CURRENT route
     const lastStep = route.steps[route.steps.length - 1];
     const destLL = L.latLng(lastStep.lat, lastStep.lng);
-
-    // keep color + index
-    const routeIndex = route.routeIndex;
     const color = route.color || colors[routeIndex % colors.length];
 
-    // remove old route layers safely
+    console.log(`♻️ Rerouting Route ${routeIndex}...`);
+
+    // 2. Remove old visuals immediately
     try { map.removeLayer(route.group); } catch {}
     try { map.removeControl(route.rc); } catch {}
 
-    // rebuild using SAME route index
-    createRoute(
+    // 3. Rebuild Route (This updates routes[routeIndex] internally)
+    // We do NOT use "routes[i] = ..." because createRoute handles it.
+    await createRoute(
         currentLL,
         destLL,
         color,
         null,
-        routeIndex
+        routeIndex // Pass index so it updates the existing slot
     );
-    activeRouteIndex = route.routeIndex;
-    currentStepIndex = Math.max(0, currentStepIndex - 1); 
-    announcedSteps.clear();
-    SPEECH.lastStepText = "";
-    speak("Route updated.", "step", { interrupt: true });
 
-    // recenter + rotate
-    forceRecenterToCar(18);
+    // 4. Reset Navigation State
+    activeRouteIndex = routeIndex;
+    currentStepIndex = 0;
+    announcedSteps.clear();
+    
+    speak("Recalculating route.", "step", { interrupt: true });
+    
+    // 5. Visual updates
     requestAnimationFrame(() => rotateTowardRoute());
-    // unlock after rebuild
-    setTimeout(() => route._rerouting = false, 4000);
+    forceRecenterToCar(18);
+
+    // 6. Unlock after 4.5 seconds
+    setTimeout(() => {
+        GLOBAL_REROUTING = false;
+    }, 4500);
 }
 
 // ===== Main AI loop =====
 async function adaptiveAIDashboard(latlng, heading) {
   const currentSpeed = calculateGPSSpeed(latlng);
   const slopeData = await predictElevationAhead(latlng, heading);
-  
   const slope = slopeData.slope;
   await getRoadType(latlng);
-
   const eco = ecoAdvisor(800, slope);
-  lastSlope = slope;
 
   UI.speedEl.textContent = `${eco.speed} km/h`;
   UI.gearEl.textContent = `${eco.gear}`;
   UI.throttleEl.textContent = `${eco.throttle}%`;
 
-  if (activeRouteIndex !== null && routes.length > 0 && routes[activeRouteIndex]) {
+  if (activeRouteIndex !== null && routes[activeRouteIndex]) {
     const route = routes[activeRouteIndex];
-    const steps = route.steps;
-    const routeDisplayIndex = route.routeIndex;
+    if (route.completed) return;
 
-    // 🆕 LOCATION-FIRST: Check if driver has jumped to a different step
+    // 1. Advance Steps
     smartStepAdvancement(latlng);
-    // 🆕 ROBUST OFF-ROUTE DETECTION
-    if (activeRouteIndex !== null && routes[activeRouteIndex]) {
-        const route = routes[activeRouteIndex];
-        /*** 🚨 AUTO REROUTE ENGINE FIX 🚨 ***/
-        const offDist = getNearestRouteDistance(latlng, route);
-        // Reroute Condition
-        if (!route.completed && offDist > 30) {
-            const now = Date.now();
-            if (now - lastRerouteTime < REROUTE_COOLDOWN) return;
-            lastRerouteTime = now;
 
-            console.warn(`👉 Off-route detected (${offDist.toFixed(1)}m) – rebuilding route...`);
-            triggerReroute(route, latlng);
-        }
+    // 2. Check Off-Route (Using the FIXED getNearestRouteDistance)
+    const offDist = getNearestRouteDistance(latlng, route);
+    
+    // Only reroute if TRULY off route (>35m) and not currently rerouting
+    if (offDist > 35 && !GLOBAL_REROUTING && (Date.now() - lastRerouteTime > REROUTE_COOLDOWN)) {
+        console.warn(`⚠️ Off-route (${offDist.toFixed(1)}m). Rerouting...`);
+        triggerReroute(route, latlng);
     }
-    // 🆕 Check for upcoming step announcements
-    checkUpcomingSteps(latlng);
 
-    // Calculate remaining distance
-    // 🔥 Live updating remaining route distance (GPS based)
-    if (route.steps && route.steps.length) {
+    // 3. Live Distance Update
+    if (route.steps && route.steps.length > currentStepIndex) {
         let remainingDist = 0;
-
-        // distance from current location to start of active step
-        const curStep = steps[currentStepIndex];
-        const stepLL = L.latLng(curStep.lat, curStep.lng);
+        
+        // Distance to the *start* of the current active step
+        const stepLL = L.latLng(route.steps[currentStepIndex].lat, route.steps[currentStepIndex].lng);
         remainingDist += latlng.distanceTo(stepLL);
 
-        // total remaining steps
-        for (let i = currentStepIndex; i < steps.length; i++) {
-            remainingDist += steps[i].distance;
+        // Add distances of all SUBSEQUENT steps
+        for (let i = currentStepIndex + 1; i < route.steps.length; i++) {
+            remainingDist += route.steps[i].distance;
         }
 
         const km = (remainingDist / 1000).toFixed(1);
-        const distanceEl = document.getElementById(`route-distance-${routeDisplayIndex}`);
-        if (distanceEl) distanceEl.textContent = `${km} km remaining`;
+        const distEl = document.getElementById(`route-distance-${route.routeIndex}`);
+        if (distEl) distEl.textContent = `${km} km remaining`;
     }
+
+    checkUpcomingSteps(latlng);
   }
 
   checkWarnings(currentSpeed, eco);
   maybeSpeakEco(eco);
-  maybeRepeatCurrentStep(); // 🆕 remind current step periodically
+  maybeRepeatCurrentStep();
 }
+
 // --- Smooth animation for car movement (Google/Waze style) ---
 let lastAnimateTime = 0;
 const animationDuration = 450; // milliseconds
@@ -2040,22 +2056,30 @@ async function createRoute(start, end, color, marker = null, index = null) {
   const routeIndex = index !== null ? index : routes.length;
   const displayIndex = routeIndex + 1;
   const endKey = `${end.lat.toFixed(6)},${end.lng.toFixed(6)}`;
-  if (routes.find(r => r.endKey === endKey)) return;
+  
+  if (index === null && routes.find(r => r.endKey === endKey)) return;
 
   const routeColor = color || colors[routeIndex % colors.length];
+  
+  // Cleanup old layers for this index
   const old = routes.find(r => r.routeIndex === routeIndex);
-  if (old) { try { map.removeControl(old.rc); } catch {} try { map.removeLayer(old.group); } catch {} }
+  if (old) { 
+      try { map.removeControl(old.rc); } catch {} 
+      try { map.removeLayer(old.group); } catch {} 
+  }
 
   const rc = L.Routing.control({
     waypoints: [start, end],
     router: OSRM_ROUTER,
     show: false, addWaypoints: false, createMarker: () => null,
-    lineOptions: { styles: [{ color: routeColor, weight: 5, opacity: 0.9 }] }
+    lineOptions: { styles: [{ color: routeColor, weight: 6, opacity: 0.9 }] }
   }).addTo(map);
 
   const group = L.layerGroup().addTo(map);
+  
   document.querySelectorAll(".leaflet-routing-container").forEach(el => el.style.display = "none");
 
+  // Create UI Box
   let box = document.getElementById(`route-box-${routeIndex}`);
   let header, content;
   if (!box) {
@@ -2076,194 +2100,106 @@ async function createRoute(start, end, color, marker = null, index = null) {
     <span id="route-distance-${routeIndex}" style="font-weight:normal;">Calculating...</span>
     <button class="route-delete" style="background:#ff4c4c;border:none;color:#fff;border-radius:50%;width:22px;height:22px;">✕</button>
   `;
-  header.onclick = () => content.style.display = content.style.display === "block" ? "none" : "block";
+  
   header.querySelector("button").onclick = () => {
-    try { speechSynthesis.cancel(); } catch {}
-    try { map.removeControl(rc); } catch {}
-    try { map.removeLayer(group); } catch {}
-    if (marker) {
-      const mIndex = waypointMarkers.indexOf(marker);
-      if (mIndex !== -1) {
-        map.removeLayer(marker);
-        waypointMarkers.splice(mIndex, 1);
-        waypoints.splice(mIndex + 1, 1);
-      }
-    }
-    box.remove();
-    activeRouteIndex = null;
-    currentStepIndex = 0;
-    announcedSteps.clear();
-    SPEECH.lastStepText = "";
-    SPEECH.lastStepSpokenAt = 0;
-    routes = routes.filter(r => r.routeIndex !== routeIndex);
-    rebuildRoutes();
-    refreshAIBox();
+      // Manual delete logic
+      const r = routes.find(x => x.routeIndex === routeIndex);
+      if(r) cleanupRoute(r);
   };
+  header.onclick = () => content.style.display = content.style.display === "block" ? "none" : "block";
+
   rc.on("routesfound", async e => {
     if (!e.routes || !e.routes[0]) return;
     const r = e.routes[0];
 
-    // Reset step system SAFELY
-    currentStepIndex = 0;
-    announcedSteps.clear();
-
-    // Prepare coordinate list
-    const coords = r.coordinates.map(c => ({ lat: c.lat, lng: c.lng }));
-    // Fetch elevations safely
+    // Important: Use the simplified coordinates from OSRM for the distance check logic
+    const coords = r.coordinates; 
     const elevs = await getElevations(coords);
+    
     content.innerHTML = "";
     const steps = [];
 
-
-    // ============================================================
-    // ✅ UNIFIED LOOP: Handle ALL steps (Start to Finish) together
-    // This fixes the "1 step ahead/behind" synchronization bug.
-    // ============================================================
+    // Draw Segments
     r.instructions.forEach((s, i) => {
-      
-      // 1. Define the start and end of THIS step's road segment
       const idxStart = s.index;
-      const idxEnd = (i + 1 < r.instructions.length) 
-                     ? r.instructions[i + 1].index 
-                     : coords.length - 1;
-
-      // Safety check: Ensure we have coordinates
-      if (idxStart >= coords.length || idxEnd > coords.length) return;
-
-      const segmentCoords = coords.slice(idxStart, idxEnd + 1).map(c => [c.lat, c.lng]);
+      const idxEnd = (i + 1 < r.instructions.length) ? r.instructions[i + 1].index : coords.length - 1;
+      
+      // Safety
+      if (idxStart >= coords.length) return;
+      const validEnd = Math.min(idxEnd, coords.length - 1);
+      const segmentCoords = coords.slice(idxStart, validEnd + 1);
       const elev = elevs[idxStart] || 0;
-
-      // 2. Draw the visual line for THIS step
+      // Draw visual line for this step
       const stepLine = L.polyline(segmentCoords, {
         color: routeColor,
-        weight: 5,
+        weight: 6,
         opacity: 0.8,
-        dashArray: "8 6"
+        pane: "routePane" // 🔥 Fixes z-index issues
       }).addTo(group);
-      const stepArrow = addPolylineArrows(stepLine, group);
-      if (stepArrow) STATIC_ROUTE_DECORATORS.push(stepArrow);
-      // 3. Create the HTML Box
+      
+      if(i === 0) addPolylineArrows(stepLine, group);
+
       const item = document.createElement("div");
-      item.className = "route-step";
-      item.innerHTML = `
-        <b>${s.text}</b>
-        <div>${(s.distance / 1000).toFixed(2)} km | Elev ${elev.toFixed(1)} m</div>
-      `;
+      item.className = "route-step upcoming";
+      item.id = `step-${routeIndex}-${i}`; // ID for removal logic
+      item.innerHTML = `<b>${s.text}</b><div>${(s.distance / 1000).toFixed(2)} km | Elev ${elev.toFixed(1)} m</div>`;
       content.appendChild(item);
 
-      // 4. Highlight effect on hover
-      item.addEventListener("mouseenter", () => stepLine.setStyle({ color: "#00FF00", weight: 7, opacity: 1 }));
-      item.addEventListener("mouseleave", () => stepLine.setStyle({ color: routeColor, weight: 5, opacity: 0.8 }));
+      // Hover Effect
+      item.addEventListener("mouseenter", () => {
+        stepLine.setStyle({
+          color: "#00FF00",
+          weight: 9,
+          opacity: 1
+        });
+      });
 
-      // 5. Store step data
-      const stepObj = {
+      item.addEventListener("mouseleave", () => {
+        stepLine.setStyle({
+          color: routeColor,
+          weight: 6,
+          opacity: 0.8
+        });
+      });
+
+      steps.push({
         lat: coords[idxStart].lat,
         lng: coords[idxStart].lng,
         text: s.text,
         elev,
-        element: item,
         distance: s.distance,
-        lineLayer: stepLine,
-        arrowLayer: stepArrow,
-        translated: false
-      };
-      steps.push(stepObj);
-
-      // ======================================================
-      // 🌍 TRANSLATION LOGIC (Applies to ALL steps strictly)
-      // ======================================================
-      const TRANSLATE_DELAY = 450;  // global safe delay
-      setTimeout(async () => {
-        if (stepObj.translated) return;
-
-        try {
-
-
-            let englishRoad = await getEnglishName(targetLat, targetLng);
-
-            if (englishRoad) {
-                englishRoad = englishRoad.split(",")[0].trim();
-
-                // Only update if the English name is NOT already in the instruction
-                if (!stepObj.text.toLowerCase().includes(englishRoad.toLowerCase())) {
-                    const newText = `${s.text} (${englishRoad})`;
-                    
-                    // Update UI
-                    item.querySelector("b").textContent = newText;
-                    stepObj.text = newText;
-                    stepObj.translated = true;
-
-                    // Update "Last Spoken" text if this is the active step right now
-                    if (activeRouteIndex === routeIndex && currentStepIndex === i) {
-                         SPEECH.lastStepText = newText;
-                         aiBoxShow("step", newText);
-                         // 🟢 NEW: Speak the corrected/translated step text
-                         speak(newText, "step", { interrupt: true });
-                    }
-                }
-            }
-        } catch (err) {
-            console.warn(`Translation failed for step ${i}`, err);
-        }
-      }, i * TRANSLATE_DELAY); // Stagger requests (600ms) to prevent API ban
+        element: item,
+      });
     });
 
-    // ============================================================
-    // INITIAL SETUP (Start Navigation)
-    // ============================================================
-    if (activeRouteIndex === null) {
-      activeRouteIndex = routeIndex;
-      currentStepIndex = 0;
-      announcedSteps.clear();
-      // 🧭 AUTO ROTATE PATH UP (EXACT BEHAVIOR FROM rotating.html)
-      autoRotation = true;
-      follow = true;
-      autoCenter = true;
-      setTimeout(() => rotateTowardRoute(), 600);
-      // Speak the first step immediately (even if translation is still loading)
-      if (steps.length > 0) {
-        const firstStep = steps[0];
-        const distText = firstStep.distance < 1000
-            ? `${firstStep.distance.toFixed(0)} meters`
-            : `${(firstStep.distance / 1000).toFixed(1)} kilometers`;
+    // Update Route Object
+    const routeObj = { 
+        rc, group, steps, endKey, routeIndex, 
+        totalDistance: r.summary.totalDistance, 
+        coordinates: coords, // 🔥 Store full coords for distance check
+        lastClosestIndex: 0,
+        color: routeColor,
+        completed: false
+    };
 
-        speak(`${firstStep.text}. Proceed for ${distText}.`, "step", { interrupt: true });
-        
-        updateStepUI(routeIndex, 0, "active");
-        announcedSteps.add(0);
-      }
-      // Virtual GPS Trigger
-      if (useVirtualGPS && steps.length > 0) {
-        updateVirtualGPS(L.latLng(steps[0].lat, steps[0].lng));
-      }
-    }
+    // Update Array safely
+    const existingIdx = routes.findIndex(x => x.routeIndex === routeIndex);
+    if (existingIdx !== -1) routes[existingIdx] = routeObj;
+    else routes.push(routeObj);
 
-    const routeObj = { rc, group, steps, endKey, routeIndex, totalDistance: r.summary.totalDistance, coordinates: coords,lastClosestIndex: 0};
-    // 🔥 REGISTER ROUTE FIRST
-    const existing = routes.find(x => x.routeIndex === routeIndex);
-    if (existing) {
-        Object.assign(existing, routeObj);
-    } else {
-        routes.push(routeObj);
-    }
-
-    // 🔥 NOW activate route & rotate
-    if (activeRouteIndex === null) {
+    // Initial Start
+    if (activeRouteIndex === null || activeRouteIndex === routeIndex) {
         activeRouteIndex = routeIndex;
         currentStepIndex = 0;
         announcedSteps.clear();
-
-        autoRotation = true;
-        follow = true;
-        autoCenter = true;
-        setTimeout(() => rotateTowardRoute(), 600);
+        updateStepUI(routeIndex, 0, 'active');
+        if(!GLOBAL_REROUTING) speak(`${steps[0].text}`, "step");
+        
+        // Update distance text immediately
+        const distEl = document.getElementById(`route-distance-${routeIndex}`);
+        if(distEl) distEl.textContent = `${(r.summary.totalDistance/1000).toFixed(1)} km total`;
     }
-
-
-    document.getElementById(`route-distance-${routeIndex}`).textContent =
-      `${(r.summary.totalDistance / 1000).toFixed(1)} km total`;
   });
-
 }
 
 map.on("click", async e => {

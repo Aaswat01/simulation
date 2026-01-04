@@ -3,9 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>test6</title>
+<title>test8</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css"/>
+<link href="https://cdn.osmbuildings.org/4.1.1/OSMBuildings.css" rel="stylesheet">
+<script src="https://cdn.osmbuildings.org/4.1.1/OSMBuildings.js"></script>
+
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{
@@ -642,6 +645,7 @@ align-items:center;color:#fff;font-size:0.9rem;}
       box-shadow:0 0.4vh 1vh rgba(121, 11, 255, 0.4);
       transition: 0.2s;
     ">⬆️</button>
+
     <button id="locate-btn" title="Recenter to my location">🎯</button>
     <div id="routePanel"></div>
     <div id="approvalPanel" aria-live="polite">
@@ -670,11 +674,11 @@ align-items:center;color:#fff;font-size:0.9rem;}
 <script>
 
 // ==============================
-// LOCATION-FIRST NAVIGATION SYSTEM
+// LOCATION-FIRST NAVIGATION SYSTEM 
 // Priority: Driver's actual location > Pre-planned announcements
 // ==============================
 const map = L.map('map', {
-    center: [20.5937, 78.9629],
+    center: [18.9582, 72.8321],
     zoom: 18,
     rotate: true,
     touchRotate: true,
@@ -695,22 +699,28 @@ const nightMap = L.tileLayer(
   }
 );
 
-const englishMap = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; OpenStreetMap contributors | © CartoDB',
-  subdomains: 'abcd', maxZoom: 19
+// Source - https://stackoverflow.com/a
+// Posted by zagistechno, modified by community. See post 'Timeline' for change history
+// Retrieved 2026-01-03, License - CC BY-SA 4.0
+
+const englishMap =  L.tileLayer('http://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{
+        maxZoom: 20,
+        subdomains:['mt0','mt1','mt2','mt3']
 });
+
 const googleMap = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
   maxZoom: 23, subdomains: ['mt0','mt1','mt2','mt3']
 });
 const osmMap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
 });
+
 googleMap.addTo(map);
 L.control.layers(
   { 
     "🌍 Google Map": googleMap,
     "🗺️ OSM Map": osmMap,
-    "🗺️ Light Map": englishMap,
+    "🗺️ Satellite": englishMap,
     "🌙 Night Mode": nightMap   // <<< added
   },
   null,
@@ -981,7 +991,7 @@ function buildPreviewRoute(startLL, endLL, labelText){
         color:'#4DA6FF', 
         weight:5, 
         opacity:0.9 
-    }).addTo(preview.group);
+    }).addTo(preview.group)
     
     // Update labels with actual numbers once loaded
     approvalDistance.textContent = fmtKm(r.summary.totalDistance);
@@ -1184,24 +1194,32 @@ map.on("movestart", (e) => {
 });
 
 // ============================================
-// 🚗 AUTO RECENTER CAR AFTER IDLE
+// 🚗 AUTO RECENTER & ROTATE AFTER IDLE
 // ============================================
 setInterval(() => {
     if (!userMarker) return;
 
     const idleTime = Date.now() - lastDashboardInteraction;
 
-    // Still interacting → do nothing
+    // 1. If user is still interacting, do nothing
     if (idleTime < IDLE_RECENTER_DELAY) return;
 
-    // Already centered → skip
-    if (follow && autoCenter && !userHasTouchedMap) return;
+    // 2. If everything is already perfect (Centered AND Rotating correctly), skip
+    // We check !autoRotation here to see if we need to restore it
+    if (follow && autoCenter && !userHasTouchedMap && (activeRouteIndex === null || autoRotation)) return;
 
-    // 🔥 FORCE RECENTER
+    // 3. 🔥 FORCE RESTORE STATE
     follow = true;
     autoCenter = true;
     userHasTouchedMap = false;
 
+    // If we have a route, re-enable auto-rotation and snap view
+    if (activeRouteIndex !== null) {
+        autoRotation = true; 
+        requestAnimationFrame(() => rotateTowardRoute());
+    }
+
+    // Smoothly fly back to car
     map.flyTo(
         userMarker.getLatLng(),
         map.getZoom(),
@@ -1276,84 +1294,72 @@ function getPathBearing(latlng, route) {
     if (!route || !route.coordinates || route.coordinates.length < 2) return 0;
 
     const coords = route.coordinates;
-    
-    // 1. Find the closest point on the route line to the car
-    let minDistance = Infinity;
-    let closestIdx = route.lastClosestIndex || 0;
-    
-    // Optimization: Search window around last known position
-    const searchStart = Math.max(0, closestIdx - 5);
-    const searchEnd = Math.min(coords.length, closestIdx + 50);
 
-    for (let i = searchStart; i < searchEnd; i++) {
+    let closest = 0;
+    let minDist = Infinity;
+
+    // find closest route point to car
+    for (let i = Math.max(0, route.lastClosestIndex - 10);
+         i < Math.min(coords.length - 1, (route.lastClosestIndex || 0) + 60);
+         i++) {
+
         const d = map.distance(latlng, coords[i]);
-        if (d < minDistance) {
-            minDistance = d;
-            closestIdx = i;
+        if (d < minDist) {
+            minDist = d;
+            closest = i;
         }
     }
-    route.lastClosestIndex = closestIdx;
 
-    // 2. Look Ahead Logic (Smooths out curves)
-    // We want the angle from [Current Pos] -> [Point 20 meters ahead]
-    let lookAheadIdx = closestIdx;
-    let distAccum = 0;
-    
-    // Increased lookahead to 20m for smoother rotation
-    while (lookAheadIdx < coords.length - 1 && distAccum < 20) {
-        distAccum += map.distance(coords[lookAheadIdx], coords[lookAheadIdx + 1]);
-        lookAheadIdx++;
+    route.lastClosestIndex = closest;
+
+    // look ahead 20–30m for smoother rotation
+    let look = closest;
+    let ahead = 0;
+    while (look < coords.length - 1 && ahead < 25) {
+        ahead += map.distance(coords[look], coords[look + 1]);
+        look++;
     }
 
-    // Safety: If at end of route, use last segment
-    if (lookAheadIdx === closestIdx && closestIdx < coords.length - 1) {
-        lookAheadIdx = closestIdx + 1;
-    }
+    const p1 = coords[closest];
+    const p2 = coords[look];
 
-    const p1 = coords[closestIdx];
-    const p2 = coords[lookAheadIdx];
-
-    // 3. Calculate Bearing
-    // This returns the angle needed to make the line vertical
+    // convert to screen-up bearing
     const angle = Math.atan2(p2.lng - p1.lng, p2.lat - p1.lat) * 180 / Math.PI;
-    
-    // Return standard 0-360 bearing
+
     return (angle + 360) % 360;
 }
+
 // ===============================
 // ROUTE-UP ROTATION (EXTRACTED)
 // ===============================
 function rotateTowardRoute() {
     if (!autoRotation) return;
-    if (!routes.length || activeRouteIndex === null) return;
+    if (activeRouteIndex === null) return;
 
     const route = routes[activeRouteIndex];
-    if (!route.coordinates || route.coordinates.length < 2) return;
+    if (!route?.coordinates || route.coordinates.length < 2) return;
 
-    const userLoc = userMarker ? userMarker.getLatLng() : map.getCenter();
-    const bearing = getPathBearing(userLoc, route);
+    const car = userMarker ? userMarker.getLatLng() : map.getCenter();
+    const bearing = getPathBearing(car, route);
 
-    // 🔥 Make path ALWAYS point straight UP (like Google Maps)
     map.setBearing(bearing, {
         animate: true,
-        duration: 0.35,
+        duration: 0.4,
         easeLinearity: 0.15
     });
 }
+
 const compassBtn = document.getElementById("compass-btn");
 compassBtn.onclick = () => {
     compassMode = (compassMode + 1) % 2;
 
-    // MODE 0 → NORTH UP ONLY
+    // NORTH-UP
     if (compassMode === 0) {
-        if (compassMode === 0) autoRotation = false;
-        lockRouteNorthUp = true;   // ✅ ADD THIS
-        follow = true;
-        autoCenter = true;
-
-        map.setBearing(0, { animate: true, duration: 600 });
+        autoRotation = false;
+        map.setBearing(0, { animate: true, duration: 500 });
         compassBtn.innerHTML = "⬆️";
         compassBtn.style.background = "#ff1212";
+        return;
     }
 
     // MODE 1 → ROUTE-UP (NOT ICON-UP)
@@ -1362,6 +1368,7 @@ compassBtn.onclick = () => {
         lockRouteNorthUp = false;
         follow = true;
         autoCenter = true;
+        rotateTowardRoute();
 
         userHasTouchedMap = false; // 🔥 important
         requestAnimationFrame(() => rotateTowardRoute());
@@ -1559,8 +1566,12 @@ function smartStepAdvancement(latlng) {
         const distText = step.distance < 1000 
           ? `${step.distance.toFixed(0)} meters` 
           : `${(step.distance / 1000).toFixed(1)} kilometers`;
-        
-        speak(`${step.text}. Proceed for ${distText}.`, "step", { interrupt: true });
+          const spoken =
+            step.translatedName
+              ? `${step.text} on ${step.translatedName}. Proceed for ${distText}.`
+              : `${step.text}. Proceed for ${distText}.`;
+
+          speak(spoken, "step", { interrupt: true });
         announcedSteps.add(currentStepIndex);
     }
 
@@ -2019,6 +2030,27 @@ async function getEnglishName(lat, lon) {
   window._roadCache[key] = "Unnamed Road";
   return "Unnamed Road";
 }
+async function addTranslatedNameToStep(step) {
+    try {
+        const name = await getEnglishName(step.lat, step.lng);
+
+        if (!name || name === "Unnamed Road") return;
+
+        // Show inside UI
+        if (step.element) {
+            const label = step.element.querySelector("b");
+            if (label && !label.innerHTML.includes(name)) {
+                label.innerHTML = `${step.text}<br><span style="opacity:.8;font-size:.8rem;">${name}</span>`;
+            }
+        }
+
+        // Save for voice usage
+        step.translatedName = name;
+
+    } catch (err) {
+        console.warn("Translation failed", err);
+    }
+}
 
 // ===============================
 // POLYLINE DECORATOR ARROWS (IMPROVED)
@@ -2068,11 +2100,18 @@ async function createRoute(start, end, color, marker = null, index = null) {
   }
 
   const rc = L.Routing.control({
-    waypoints: [start, end],
-    router: OSRM_ROUTER,
-    show: false, addWaypoints: false, createMarker: () => null,
-    lineOptions: { styles: [{ color: routeColor, weight: 6, opacity: 0.9 }] }
-  }).addTo(map);
+      waypoints: [start, end],
+      router: OSRM_ROUTER,
+      show: false, 
+      addWaypoints: false, 
+      createMarker: () => null,
+      // 👇 UPDATE THIS BLOCK
+      lineOptions: { 
+          styles: [], // <--- EMPTY ARRAY hides the default line
+          extendToWaypoints: false, 
+          missingRouteTolerance: 50 
+      } 
+    }).addTo(map);
 
   const group = L.layerGroup().addTo(map);
   
@@ -2134,10 +2173,9 @@ async function createRoute(start, end, color, marker = null, index = null) {
         color: routeColor,
         weight: 6,
         opacity: 0.8,
-        pane: "routePane" // 🔥 Fixes z-index issues
       }).addTo(group);
-      
-      if(i === 0) addPolylineArrows(stepLine, group);
+      const stepArrow = addPolylineArrows(stepLine, group);
+      if (stepArrow) STATIC_ROUTE_DECORATORS.push(stepArrow);
 
       const item = document.createElement("div");
       item.className = "route-step upcoming";
@@ -2147,20 +2185,72 @@ async function createRoute(start, end, color, marker = null, index = null) {
 
       // Hover Effect
       item.addEventListener("mouseenter", () => {
-          stepLine.setStyle({ color: "#00FF00", weight: 9, opacity: 1 });
+          stepLine.setStyle({ color: "#00FF00", weight: 7, opacity: 1 });
       });
       item.addEventListener("mouseleave", () => {
-          stepLine.setStyle({ color: routeColor, weight: 6, opacity: 0.8 });
+          stepLine.setStyle({ color: routeColor, weight: 5, opacity: 0.8 });
       });
 
-      steps.push({
+      const stepObj = {
         lat: coords[idxStart].lat,
         lng: coords[idxStart].lng,
         text: s.text,
         elev,
+        element: item,
         distance: s.distance,
-        element: item
-      });
+        lineLayer: stepLine,
+        translated: false
+      };
+      steps.push(stepObj);
+
+      // ======================================================
+      // 🌍 TRANSLATION LOGIC (Applies to ALL steps strictly)
+      // ======================================================
+      setTimeout(async () => {
+
+          // Retry until we actually get a usable road name
+          let attempts = 0;
+          let englishRoad = null;
+
+          while (attempts < 3 && (!englishRoad || englishRoad === "Unnamed Road")) {
+
+              // pick a safer middle point (NOT at intersection)
+              const midIndex = Math.floor(idxStart + ((idxEnd - idxStart) * 0.5));
+              const targetLat = coords[midIndex].lat;
+              const targetLng = coords[midIndex].lng;
+
+              englishRoad = await getEnglishName(targetLat, targetLng);
+
+              attempts++;
+              await new Promise(r => setTimeout(r, 300));
+          }
+
+          if (!englishRoad || englishRoad === "Unnamed Road") return;
+
+          englishRoad = englishRoad.split(",")[0].trim();
+
+          // Avoid duplicates
+          if (!stepObj.text.toLowerCase().includes(englishRoad.toLowerCase())) {
+
+              const newText = `${s.text} (${englishRoad})`;
+
+              // UI
+              item.querySelector("b").textContent = newText;
+
+              // Data
+              stepObj.text = newText;
+              stepObj.translated = true;
+
+              // If this step is active → update speech box + voice
+              if (activeRouteIndex === routeIndex && currentStepIndex === i) {
+                  SPEECH.lastStepText = newText;
+                  aiBoxShow("step", newText);
+                  speak(newText, "step", { interrupt: true });
+              }
+          }
+
+      }, i * 800);   // ⬅️ slower — avoids Nominatim blocking
+
     });
 
     // Update Route Object
@@ -2178,15 +2268,25 @@ async function createRoute(start, end, color, marker = null, index = null) {
     if (existingIdx !== -1) routes[existingIdx] = routeObj;
     else routes.push(routeObj);
 
-    // Initial Start
+// Initial Start
     if (activeRouteIndex === null || activeRouteIndex === routeIndex) {
         activeRouteIndex = routeIndex;
         currentStepIndex = 0;
         announcedSteps.clear();
         updateStepUI(routeIndex, 0, 'active');
+        
+        // 🟢 UPDATE: Force immediate rotation when path is made
+        autoRotation = true;
+        follow = true;
+        autoCenter = true;
+        userHasTouchedMap = false; // Ensure map knows user isn't holding it
+        
+        // Force rotation instantly, then again after a slight delay to ensure lines are rendered
+        requestAnimationFrame(() => rotateTowardRoute());
+        setTimeout(() => rotateTowardRoute(), 1000);
+
         if(!GLOBAL_REROUTING) speak(`${steps[0].text}`, "step");
         
-        // Update distance text immediately
         const distEl = document.getElementById(`route-distance-${routeIndex}`);
         if(distEl) distEl.textContent = `${(r.summary.totalDistance/1000).toFixed(1)} km total`;
     }

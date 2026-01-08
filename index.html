@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>test8</title>
+<title>test9</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css"/>
 <link href="https://cdn.osmbuildings.org/4.1.1/OSMBuildings.css" rel="stylesheet">
@@ -686,6 +686,7 @@ const map = L.map('map', {
     rotateControl: true,
     inertia: true
 });
+
 // 🔝 Dedicated pane so route line never hides
 map.createPane("routePane");
 map.getPane("routePane").style.zIndex = 450;
@@ -728,6 +729,39 @@ L.control.layers(
 ).addTo(map);
 
 const carIcon=L.icon({iconUrl:'https://cdn-icons-png.flaticon.com/512/3097/3097144.png',iconSize:[42,42]});
+// DOT (no navigation)
+const dotIcon = L.divIcon({
+  className: "",
+  html: `
+    <div style="
+      width:22px;height:22px;
+      border-radius:50%;
+      background:#4da6ff;
+      border:3px solid white;
+      box-shadow:0 0 10px rgba(0,0,0,.6)">
+    </div>
+  `,
+  iconSize:[22,22],
+  iconAnchor:[11,11]
+});
+
+// ARROW (navigation)
+const navArrowIcon = L.divIcon({
+  className: "",
+  html: `
+    <div id="nav-arrow" style="
+      width:32px;height:32px;
+      transform: rotate(0deg);
+      transition: transform .15s linear;">
+      <svg viewBox="0 0 24 24" width="32" height="32" fill="#1e88ff" stroke="white" stroke-width="1.5">
+        <path d="M12 2L19 21L12 17L5 21Z"/>
+      </svg>
+    </div>
+  `,
+  iconSize:[32,32],
+  iconAnchor:[16,16]
+});
+
 const slidePanel = document.getElementById("slideRoutePanel");
 
 document.getElementById("routePanelBtn").onclick = () => {
@@ -1261,7 +1295,7 @@ if (navigator.geolocation){
     }
     lastHeading = heading;
     if(!userMarker){
-      userMarker = L.marker(latlng,{icon:carIcon}).addTo(map);
+      userMarker = L.marker(latlng,{icon:dotIcon}).addTo(map);
       map.setView(latlng, 19);
     } else {
       userMarker.setLatLng(latlng);
@@ -1271,6 +1305,8 @@ if (navigator.geolocation){
     if (autoRotation && activeRouteIndex !== null) {
         rotateTowardRoute();
     }
+    updateNavArrow(latlng);
+
     // Only center if user did NOT interact manually
     if (follow && autoCenter) {
         map.panTo(latlng, map.getZoom(), { animate: true });
@@ -1327,6 +1363,37 @@ function getPathBearing(latlng, route) {
     const angle = Math.atan2(p2.lng - p1.lng, p2.lat - p1.lat) * 180 / Math.PI;
 
     return (angle + 360) % 360;
+}
+
+function updateNavArrow(latlng) {
+    if (!userMarker) return;
+
+    // no route → dot mode
+    if (activeRouteIndex === null || !routes[activeRouteIndex]) {
+        userMarker.setIcon(dotIcon);
+        return;
+    }
+
+    const route = routes[activeRouteIndex];
+    if (!route.coordinates || route.coordinates.length < 2) {
+        userMarker.setIcon(dotIcon);
+        return;
+    }
+
+    // ensure arrow is active
+    userMarker.setIcon(navArrowIcon);
+
+    // world bearing along path
+    const bearing = getPathBearing(latlng, route);
+
+    // 🔥 compensate for map rotation
+    const mapBearing = map.getBearing ? map.getBearing() : 0;
+    const relative = (bearing - mapBearing + 360) % 360;
+
+    const el = document.getElementById("nav-arrow");
+    if (el) {
+        el.style.transform = `rotate(${relative}deg)`;
+    }
 }
 
 // ===============================
@@ -1668,6 +1735,8 @@ function cleanupRoute(route) {
       currentStepIndex = 0;
       console.log("Switching to next destination in queue.");
   }
+  if (userMarker) userMarker.setIcon(dotIcon);
+
 }
 
 // 🆕 REPEAT CURRENT STEP INSTRUCTION (like eco tips)
@@ -1701,7 +1770,7 @@ function autoRepeatSpeech() {
     const now = nowMs();
 
     // Do NOT repeat during warning
-    if (now < SPEECH.warningActiveUntil) return;
+    if (now < SPEECH.warningActiveUntil) return
 
     // If navigating
     if (activeRouteIndex !== null && routes[activeRouteIndex]) {
@@ -1982,7 +2051,7 @@ document.addEventListener("visibilitychange", () => {
     speak(SPEECH.lastEcoText, "eco", { interrupt:true });
   }, 250);
 });
-// 🟢 Add THIS right after the existing one:
+// 🟢 Add THIS right after the existing one:  
 document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && userMarker && autoCenter) {
         map.panTo(userMarker.getLatLng(), { animate: true });
@@ -2030,27 +2099,7 @@ async function getEnglishName(lat, lon) {
   window._roadCache[key] = "Unnamed Road";
   return "Unnamed Road";
 }
-async function addTranslatedNameToStep(step) {
-    try {
-        const name = await getEnglishName(step.lat, step.lng);
 
-        if (!name || name === "Unnamed Road") return;
-
-        // Show inside UI
-        if (step.element) {
-            const label = step.element.querySelector("b");
-            if (label && !label.innerHTML.includes(name)) {
-                label.innerHTML = `${step.text}<br><span style="opacity:.8;font-size:.8rem;">${name}</span>`;
-            }
-        }
-
-        // Save for voice usage
-        step.translatedName = name;
-
-    } catch (err) {
-        console.warn("Translation failed", err);
-    }
-}
 
 // ===============================
 // POLYLINE DECORATOR ARROWS (IMPROVED)
@@ -2249,7 +2298,7 @@ async function createRoute(start, end, color, marker = null, index = null) {
               }
           }
 
-      }, i * 800);   // ⬅️ slower — avoids Nominatim blocking
+      }, i * 1200);   // ⬅️ slower — avoids Nominatim blocking
 
     });
 
@@ -2274,6 +2323,10 @@ async function createRoute(start, end, color, marker = null, index = null) {
         currentStepIndex = 0;
         announcedSteps.clear();
         updateStepUI(routeIndex, 0, 'active');
+        // force arrow icon when navigation starts
+        if (userMarker) {
+            userMarker.setIcon(navArrowIcon);
+        }
         
         // 🟢 UPDATE: Force immediate rotation when path is made
         autoRotation = true;
@@ -3109,4 +3162,4 @@ micBtn.onclick = async () => {
 };
 </script>
 </body>
-  </html>
+</html>

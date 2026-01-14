@@ -42,11 +42,23 @@ This README is written as **knowledge‑transfer documentation**, not a marketin
 ## Repository Structure
 
 ```
-.
-├── dashboard.html              # Single‑page application (UI + logic)
-├── leaflet.polylineDecorator.js# Route arrow & symbol engine
-├── leaflet-rotate-src.js       # Full map rotation engine
-└── README.md                   # This document
+Browser
+ ├── dashboard.html
+ │    ├── UI (HTML + CSS)
+ │    ├── Map initialization
+ │    ├── Navigation logic
+ │    ├── AI assistance layer
+ │
+ ├── leaflet-rotate-src.js
+ │    └── Map & marker rotation engine
+ │
+ ├── leaflet.polylineDecorator.js
+ │    └── Direction arrows & path symbols
+ │
+ └── External APIs
+      ├── OSRM routing
+      ├── Nominatim search
+      ├── Elevation data
 ```
 
 The system is intentionally **flat‑structured** to simplify onboarding and debugging.
@@ -57,13 +69,13 @@ The system is intentionally **flat‑structured** to simplify onboarding and deb
 
 | Component         | Purpose            | Link                                                                                                           |
 | ----------------- | ------------------ | -------------------------------------------------------------------------------------------------------------- |
-| Leaflet.js        | Map engine         | [https://leafletjs.com](https://leafletjs.com)                                                                 |
+| Leaflet.js        | Map engine         | "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"                                                             |
 | OSRM              | Routing backend    | [https://project-osrm.org](https://project-osrm.org)                                                           |
 | OpenStreetMap     | Map data           | [https://www.openstreetmap.org](https://www.openstreetmap.org)                                                 |
-| PolylineDecorator | Direction arrows   | [https://github.com/bbecquet/Leaflet.PolylineDecorator](https://github.com/bbecquet/Leaflet.PolylineDecorator) |
-| Leaflet‑Rotate    | Map rotation       | [https://github.com/Raruto/leaflet-rotate](https://github.com/Raruto/leaflet-rotate)                           |
-| Nominatim         | Search & geocoding | [https://nominatim.org](https://nominatim.org)                                                                 |
-
+| PolylineDecorator | Direction arrows   | [leaflet.polylineDecorator.js](https://github.com/bbecquet/Leaflet.PolylineDecorator)                          |
+| Leaflet‑Rotate    | Map rotation       | [leaflet-rotate-src.js](https://github.com/Raruto/leaflet-rotate)                                              |
+| Nominatim         | Search & geocoding | (https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latlng.lat}&lon=${latlng.lng})                |
+| Routing           | Routing Leaflet    | [https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js]                             |
 ---
 
 ## Application Boot Sequence (Step‑by‑Step)
@@ -99,7 +111,75 @@ The system is intentionally **flat‑structured** to simplify onboarding and deb
    * Driver position becomes system truth
 
 ---
+File Breakdown
 
+## 1. index.html
+
+This is the single‑page application entry point. It contains:
+
+Complete UI layout
+
+All runtime JavaScript logic
+
+Map initialization
+
+Navigation state machine
+
+Why single‑file?
+
+Zero build system
+
+Easy offline hosting
+
+Simple deployment on embedded systems
+
+## 2. leaflet.polylineDecorator.js
+
+Responsible for visual route direction indicators.
+
+Key capabilities:
+
+Arrow heads aligned with route direction
+
+Dash / symbol repetition along polyline
+
+Heading calculation per segment
+
+Core Math
+
+Segment Heading Calculation
+
+heading = atan2(Δy, Δx) × 180/π
+
+Each arrow is rotated to match the bearing of the route segment it belongs to.
+
+Interpolation
+Arrows are placed at fixed distance ratios along the polyline using linear interpolation between segment endpoints.
+
+## 3. leaflet-rotate-src.js
+
+Extends Leaflet to support true map rotation, not just marker rotation.
+
+Features:
+
+Rotate map canvas
+
+Rotate markers relative to map or world
+
+Maintain popup & tooltip alignment
+
+Bearing‑aware coordinate transforms
+
+Rotation Math
+
+2D Rotation Matrix:
+
+[x']   [ cosθ  -sinθ ] [x]
+[y'] = [ sinθ   cosθ ] [y]
+
+Applied around a pivot point (map center) to keep navigation heading‑up.
+
+---
 ## Map Engine Deep Dive (Leaflet)
 
 Leaflet is used as a **low‑level rendering engine**, not as a routing solution.
@@ -440,29 +520,10 @@ On arrival:
 All handled defensively with state checks.
 
 ---
+## License & Attribution
 
-## Design Philosophy Summary
+OpenStreetMap contributors
 
-* Location is truth
-* Routes are stateful
-* UI never leads logic
-* Math over magic
-* No black boxes
+Leaflet.js
 
----
-
-## Intended Use Cases
-
-* Navigation research
-* Automotive UI prototyping
-* Embedded systems
-* Academic projects
-* Open‑source navigation engines
-
----
-
-## Final Note
-
-This project is intentionally **verbose, explicit, and low‑level**. It is meant to be read, understood, and extended — not merely executed.
-
-If you understand this codebase, you understand how modern navigation systems actually work.
+OSRM Project

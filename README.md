@@ -117,44 +117,43 @@ File Breakdown
 
 This is the single‑page application entry point. It contains:
 
-Complete UI layout
+*Complete UI layout
 
-All runtime JavaScript logic
+*All runtime JavaScript logic
 
-Map initialization
+* Map initialization
 
-Navigation state machine
+* Navigation state machine
 
 Why single‑file?
 
-Zero build system
+*Zero build system
 
-Easy offline hosting
+*Easy offline hosting
 
-Simple deployment on embedded systems
+* Simple deployment on embedded systems
 
 ## 2. leaflet.polylineDecorator.js
 
-Responsible for visual route direction indicators.
+* Responsible for visual route direction indicators.
 
-Key capabilities:
+* Key capabilities:
 
-Arrow heads aligned with route direction
+* Arrow heads aligned with route direction
 
-Dash / symbol repetition along polyline
+* Dash / symbol repetition along polyline
 
-Heading calculation per segment
+* Heading calculation per segment
 
 Core Math
 
 Segment Heading Calculation
-
+```
 heading = atan2(Δy, Δx) × 180/π
-
+```
 Each arrow is rotated to match the bearing of the route segment it belongs to.
 
-Interpolation
-Arrows are placed at fixed distance ratios along the polyline using linear interpolation between segment endpoints.
+InterpolationArrows are placed at fixed distance ratios along the polyline using linear interpolation between segment endpoints.
 
 ## 3. leaflet-rotate-src.js
 
@@ -162,21 +161,21 @@ Extends Leaflet to support true map rotation, not just marker rotation.
 
 Features:
 
-Rotate map canvas
+*Rotate map canvas
 
-Rotate markers relative to map or world
+*Rotate markers relative to map or world
 
-Maintain popup & tooltip alignment
+*Maintain popup & tooltip alignment
 
-Bearing‑aware coordinate transforms
+*Bearing‑aware coordinate transforms
 
 Rotation Math
 
 2D Rotation Matrix:
-
+```
 [x']   [ cosθ  -sinθ ] [x]
 [y'] = [ sinθ   cosθ ] [y]
-
+```
 Applied around a pivot point (map center) to keep navigation heading‑up.
 
 ---

@@ -111,15 +111,15 @@ The system is intentionally **flat‑structured** to simplify onboarding and deb
    * Driver position becomes system truth
 
 ---
-File Breakdown
+## File Breakdown
 
-## 1. index.html
+1. index.html
 
 This is the single‑page application entry point. It contains:
 
-*Complete UI layout
+* Complete UI layout
 
-*All runtime JavaScript logic
+* All runtime JavaScript logic
 
 * Map initialization
 
@@ -127,9 +127,9 @@ This is the single‑page application entry point. It contains:
 
 Why single‑file?
 
-*Zero build system
+* Zero build system
 
-*Easy offline hosting
+* Easy offline hosting
 
 * Simple deployment on embedded systems
 
@@ -161,13 +161,13 @@ Extends Leaflet to support true map rotation, not just marker rotation.
 
 Features:
 
-*Rotate map canvas
+* Rotate map canvas
 
-*Rotate markers relative to map or world
+* Rotate markers relative to map or world
 
-*Maintain popup & tooltip alignment
+* Maintain popup & tooltip alignment
 
-*Bearing‑aware coordinate transforms
+* Bearing‑aware coordinate transforms
 
 Rotation Math
 

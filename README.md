@@ -110,6 +110,59 @@ The system is intentionally **flat‑structured** to simplify onboarding and deb
 
    * Driver position becomes system truth
 
+## 📈 ASCII CALL-FLOW DIAGRAM
+```
+User Interaction
+   │
+   ├─ Text Search / Voice Search
+   │      │
+   │      ├─ getSearchResults()
+   │      │     ├─ Photon API
+   │      │     ├─ Nominatim API
+   │      │     └─ Wikipedia API
+   │      │
+   │      └─ openPreviewTo(latlng)
+   │             ├─ reverseGeocode()
+   │             ├─ speak("Destination set")
+   │             └─ buildPreviewRoute()
+   │                    └─ OSRM.route()
+   │
+   ├─ Map Tap (Select Mode)
+   │      │
+   │      └─ openPreviewTo(latlng)
+   │
+   ├─ Approval Panel → START
+   │      │
+   │      └─ approvalStartBtn.onclick
+   │             ├─ clearPreview()
+   │             ├─ createRoute()
+   │             │     └─ OSRM_ROUTER.route()
+   │             ├─ enable arrow decorators
+   │             ├─ autoRotation = true
+   │             └─ activate step engine
+   │
+GPS Position Update (watchPosition)
+   │
+   ├─ calculateGPSSpeed()
+   ├─ updateSpeedLimit()
+   ├─ updateNavArrow()
+   │      └─ getPathBearing()
+   ├─ rotateTowardRoute()
+   ├─ smartStepAdvancement()
+   ├─ checkUpcomingSteps()
+   ├─ adaptiveAIDashboard()
+   │      ├─ getRoadType()
+   │      ├─ predictElevationAhead()
+   │      ├─ ecoAdvisor()
+   │      └─ speak() / aiBoxShow()
+   │
+Deviation Detection
+   │
+   └─ getNearestRouteDistance()
+          └─ triggerReroute()
+                 └─ createRoute() (again)
+
+```
 ---
 ## File Breakdown
 
@@ -341,6 +394,7 @@ User can:
 
 Multiple candidate results are returned using Nominatim + auxiliary APIs.
 
+
 ---
 
 ### 2. Route Preview Phase
@@ -397,6 +451,82 @@ On approval:
 Function Trigger:
 ```
 approvalStartBtn.addEventListener("click", ...)
+```
+----
+## FUNCTION CALL GRAPH
+```
+UI Layer
+│
+├─ openPreviewTo()
+│    ├─ reverseGeocode()
+│    ├─ speak()
+│    └─ buildPreviewRoute()
+│          └─ OSRM_ROUTER.route()
+│
+├─ approvalStartBtn.onclick
+│    ├─ clearPreview()
+│    ├─ createRoute()
+│    └─ rotateTowardRoute()
+│
+GPS Core Loop
+│
+├─ calculateGPSSpeed()
+├─ updateSpeedLimit()
+├─ updateNavArrow()
+│    └─ getPathBearing()
+│          └─ atan2()
+├─ rotateTowardRoute()
+├─ smartStepAdvancement()
+│    ├─ findCurrentStepByLocation()
+│    ├─ updateStepUI()
+│    └─ speak()
+├─ checkUpcomingSteps()
+└─ adaptiveAIDashboard()
+     ├─ getRoadType()
+     ├─ predictElevationAhead()
+     │     └─ getElevations()
+     ├─ ecoAdvisor()
+     └─ maybeSpeakEco()
+
+Deviation Handling
+│
+└─ getNearestRouteDistance()
+     └─ distanceToSegment()
+          └─ vector projection math
+```
+----
+## STATE MACHINE DIAGRAM
+```
+[ IDLE ]
+   │
+   ├─ Search / Map Tap
+   ▼
+[ PREVIEW ]
+   │
+   ├─ Cancel ─────────────► [ IDLE ]
+   │
+   └─ Approve
+        │
+        ▼
+[ NAVIGATING ]
+        │
+        ├─ GPS Update
+        │     ├─ Step Advancement
+        │     ├─ AI Advice
+        │     └─ Map Rotation
+        │
+        ├─ Off-Route
+        │     └─ [ REROUTING ]
+        │              │
+        │              └─ Back to [ NAVIGATING ]
+        │
+        └─ Final Step
+               │
+               ▼
+      [ DESTINATION REACHED ]
+               │
+               ├─ Next Route Exists ─► [ NAVIGATING ]
+               └─ No More Routes ────► [ IDLE ]
 ```
 ---
 
@@ -478,6 +608,42 @@ distance(driver, step_end) < STEP_ARRIVAL_THRESHOLD
 Why this matters
 
 Steps are location-validated, not time-based.
+
+---
+## SEQUENCE DIAGRAM
+```
+Time →
+┌────────────┐
+│ GPS Update │
+└─────┬──────┘
+      │
+      ├─ calculateGPSSpeed()
+      │
+      ├─ updateSpeedLimit()
+      │
+      ├─ updateNavArrow()
+      │
+      ├─ smartStepAdvancement()
+      │     ├─ step reached?
+      │     └─ speak("Turn instruction")
+      │
+      ├─ adaptiveAIDashboard()
+      │     ├─ predictElevationAhead()
+      │     ├─ ecoAdvisor()
+      │     └─ maybeSpeakEco()
+      │
+      ├─ UI Update
+      │     ├─ Speed
+      │     ├─ Gear
+      │     ├─ Throttle
+      │     └─ AI Tip Box
+      │
+      └─ Cooldown Guards
+            ├─ SPEECH.WARNING_HOLD
+            ├─ ECO_COOLDOWN
+            └─ STEP_REMINDER
+```
+---
 
 ### Step Activation Logic
 
@@ -686,6 +852,38 @@ On arrival:
 
 All handled defensively with state checks.
 
+-----
+## 🚨 FAILURE FLOW DIAGRAM
+```
+GPS Permission Denied
+   │
+   └─ Enable Virtual GPS
+        └─ updateVirtualGPS()
+
+OSRM API Failure
+   │
+   ├─ Preview Phase
+   │     └─ Allow START anyway
+   │
+   └─ Active Navigation
+         └─ Retry with cooldown
+               └─ Keep last route
+
+Elevation API Failure
+   │
+   └─ Default slope = 0
+        └─ Disable slope-based tips
+
+Speed Limit API Failure
+   │
+   └─ Keep last known limit
+        └─ UI shows "--"
+
+Speech Engine Failure
+   │
+   └─ AI Box remains active
+```
+
 ---
 
 | Global             | Purpose              |
@@ -698,11 +896,12 @@ All handled defensively with state checks.
 | `SPEECH.*`         | Speech cooldowns     |
 | `lastSpeedLimit`   | Cached speed         |
 
----
+
+
 ## License & Attribution
 
-OpenStreetMap contributors
+* OpenStreetMap contributors
 
-Leaflet.js
+* Leaflet.js
 
-OSRM Project
+* OSRM Project

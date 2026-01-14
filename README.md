@@ -216,6 +216,21 @@ Multiple tile sources are supported concurrently:
 
 Switching layers **does not reset** navigation, routes, or steps.
 
+Functions / Objects :
+```
+const googleMap = L.tileLayer(...)
+const osmMap = L.tileLayer(...)
+const nightMap = L.tileLayer(...)
+L.control.layers(...)
+```
+
+Logic :
+
+* Each tile layer is stateless
+ 
+* Switching layers does not reset navigation
+
+* Routes, markers, rotation remain untouched
 ---
 
 ## Marker Architecture
@@ -229,6 +244,21 @@ Switching layers **does not reset** navigation, routes, or steps.
 
 The arrow icon rotation is driven by **real bearing**, not map orientation.
 
+Functions / Objects:
+```
+const dotIcon = L.divIcon({...})
+const navArrowIcon = L.divIcon({...})
+```
+Switching Logic : 
+```
+function updateNavArrow(latlng) {
+  if (!activeRouteIndex) {
+    userMarker.setIcon(dotIcon);
+    return;
+  }
+  userMarker.setIcon(navArrowIcon);
+}
+```
 ---
 
 ## Routing Engine (OSRM)
@@ -254,6 +284,27 @@ The system **does not trust OSRM blindly**. All step progression is validated ag
 
 Public APIs enforce rate limits and can fail unpredictably.
 
+Functions:
+
+```
+async function safeFetch(url, retries)
+async function processQueue()
+````
+Globals:
+```
+MAX_REQUESTS = 6
+REQUEST_DELAY = 120ms
+activeRequests
+requestQueue
+````
+
+What it prevents:
+
+* OSRM 429 errors
+
+* Elevation API overload
+
+* Search spam crashes
 ### Problem
 
 * Multiple rapid searches
@@ -300,6 +351,26 @@ Multiple candidate results are returned using Nominatim + auxiliary APIs.
 
 Purpose: **visual confirmation without commitment**.
 
+Code Location
+
+Core Functions: 
+```
+function buildPreviewRoute(startLL, endLL, labelText)
+function openPreviewTo(latlng, label)
+function clearPreview()
+```
+
+Flow:
+
+* User clicks/searches
+
+* openPreviewTo() resolves address
+
+* buildPreviewRoute() fetches OSRM
+
+* Preview polyline rendered
+
+Approval panel shown
 ---
 
 ### 3. Approval Panel
@@ -322,7 +393,11 @@ On approval:
 * Driver marker switches to arrow
 * Map enters heading‑up mode
 * Step engine activated
-
+  
+Function Trigger:
+```
+approvalStartBtn.addEventListener("click", ...)
+```
 ---
 
 ## Polyline Decorator Internals (Math)
@@ -351,6 +426,23 @@ This ensures arrows scale correctly at all zoom levels.
 
 This subsystem performs **true map rotation**, not CSS tricks.
 
+Core Function:
+```
+function getPathBearing(latlng, route)
+```
+Internal Math
+```
+const angle = Math.atan2(p2.lng - p1.lng, p2.lat - p1.lat) * 180 / Math.PI
+```
+
+Purpose: 
+
+* Computes forward direction along route
+
+* Uses look-ahead distance (20–30m) for smooth rotation
+
+* Avoids jitter from GPS noise
+
 ### Core Math
 
 2D rotation matrix:
@@ -373,6 +465,19 @@ Applied around the map’s pivot point.
 ## Step Management Engine
 
 Each route contains an ordered step list.
+
+Core Functions:
+* findCurrentStepByLocation()
+* smartStepAdvancement()
+* updateStepUI()
+
+Step Detection Logic:
+```
+distance(driver, step_end) < STEP_ARRIVAL_THRESHOLD
+```
+Why this matters
+
+Steps are location-validated, not time-based.
 
 ### Step Activation Logic
 
@@ -404,10 +509,26 @@ d = 2R · asin(√(sin²(Δφ/2) + cosφ1·cosφ2·sin²(Δλ/2)))
 
 ## Automatic Rerouting
 
+Core Functions:
+```
+getNearestRouteDistance()
+distanceToSegment()
+```
+Geometry Used:
+
+* Point-to-segment projection
+* Sliding window optimization (±100 points)
+
+Reroute Trigger:
+```
+if (distance > threshold && cooldown expired)
+```
+
 Triggered when:
 
 * Driver deviates beyond threshold from polyline
 * Cooldown elapsed
+
 
 ```js
 REROUTE_COOLDOWN = 6000ms
@@ -455,11 +576,24 @@ Each stop:
 
 ### Inputs
 
-* Speed
-* Speed limit
-* Road type
-* Slope (elevation)
-* Step distance
+Inputs → Functions:
+| Input          | Function                  |
+| -------------- | ------------------------- |
+| Speed          | `calculateGPSSpeed()`     |
+| Road Type      | `getRoadType()`           |
+| Elevation      | `getElevations()`         |
+| Slope          | `predictElevationAhead()` |
+| Distance Ahead | `LOOKAHEAD_DISTANCE`      |
+
+Decision Engine:
+```
+ecoAdvisor(distAhead, slope)
+```
+
+Returns:
+```
+{ speed, gear, throttle, tip }
+```
 
 ### Outputs
 
@@ -480,6 +614,21 @@ Ensures relevance without spam.
 
 ## Speed Limit Inference
 
+Function:
+```
+async function updateSpeedLimit(latlng)
+```
+Data Source
+
+* Overpass API
+* OSM maxspeed tag
+
+Special Handling:
+
+* Arabic numerals → Latin
+* mph → km/h conversion
+* Sanity bounds (10–200 km/h)
+  
 Speed limits are derived from:
 
 * OSM road metadata
@@ -491,6 +640,17 @@ Used for both display and warnings.
 
 ## Localization & Translation
 
+Speech Engine:
+* function speak(text, kind)
+* function refreshAIBox()
+
+Translation Trigger
+
+Occurs when:
+
+* Nominatim returns non-local language
+* Step names differ from UI locale
+  
 When crossing borders:
 
 * Step text auto‑translated
@@ -501,7 +661,15 @@ When crossing borders:
 
 ## Destination Arrival Handling
 
+Logic:
+```
+if (latlng.distanceTo(lastStep) < 20m)
+```
+Function:
+```
+cleanupRoute(route)
 On arrival:
+```
 
 * AI announces completion
 * Route box closes
@@ -517,6 +685,18 @@ On arrival:
 * Step misalignment
 
 All handled defensively with state checks.
+
+---
+
+| Global             | Purpose              |
+| ------------------ | -------------------- |
+| `activeRouteIndex` | Current route        |
+| `currentStepIndex` | Active step          |
+| `announcedSteps`   | Speech deduplication |
+| `autoRotation`     | Route-up mode        |
+| `follow`           | Auto-centering       |
+| `SPEECH.*`         | Speech cooldowns     |
+| `lastSpeedLimit`   | Cached speed         |
 
 ---
 ## License & Attribution
